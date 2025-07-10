@@ -1,0 +1,72 @@
+# docker-compose.yml
+# Final version: 2025-07-08
+# This file orchestrates the ANPR listener, web UI, MariaDB, and Cloudflare tunnel as separate services.
+version: '3.8'
+
+services:
+  # Service 1: The ANPR listener
+  # This container runs the get_plates.py script to listen for camera events.
+  anpr-listener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anpr_listener_service
+    env_file: .env
+    restart: always
+    command: python anpr_listener.py
+    volumes:
+      - ./app/anpr_images:/app/anpr_images
+      - ./app/logs:/app/logs
+      - ./app/config.ini:/app/config.ini:ro
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  # Service 2: The Web Interface
+  # This container runs the Flask app with Gunicorn.
+  anpr-web-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anpr_web_ui_service
+    env_file: .env
+    restart: always
+    command: gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 app:app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./app/anpr_images:/app/anpr_images:ro
+      - ./app/config.ini:/app/config.ini:ro
+    depends_on:
+      - anpr-listener
+      - mariadb
+
+  # Service 3: The Cloudflare Tunnel
+  # This service creates a secure tunnel to the web interface.
+  cloudflared-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: anpr_tunnel
+    restart: always
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TOKEN}
+    depends_on:
+      - anpr-web-ui
+
+  # Service 4: MariaDB Database
+  mariadb:
+    image: mariadb:10.6
+    container_name: anpr_mariadb
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./app/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes: {}
