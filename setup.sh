@@ -11,10 +11,8 @@ NC='\033[0m' # No Color
 # --- Configuration ---
 # Define paths directly in the script, as they are related to the project structure
 APP_DIR="app"
-IMAGE_DIR_HOST="${APP_DIR}/anpr_images" # Path on the host for images
-LOG_DIR_HOST="${APP_DIR}/logs"         # Path on the host for logs
-DB_DATA_VOLUME_NAME="anpr_db_data"     # Named volume for MariaDB data
-DEPS_MARKER_FILE="${LOG_DIR_HOST}/.dependencies_checked" # Marker file for dependency installation
+IMAGE_DIR="${APP_DIR}/anpr_images"
+LOG_DIR="${APP_DIR}/logs"
 SDK_TEMP_DIR=".sdk_temp"
 ENV_FILE=".env"
 CONFIG_INI="${APP_DIR}/config.ini"
@@ -44,40 +42,6 @@ usage() {
 
 # Function to install required system dependencies
 install_dependencies() {
-    # Ensure LOG_DIR_HOST exists before trying to use it for the marker file
-    mkdir -p "${LOG_DIR_HOST}"
-
-    if [ -f "${DEPS_MARKER_FILE}" ]; then
-        echo -e "${GREEN}--- System dependencies appear to be already checked/installed. Skipping. ---${NC}"
-        # Still need to export COMPOSE_CMD if not set
-        if [ -z "$COMPOSE_CMD" ]; then
-            if [ "$(id -u)" -ne 0 ]; then
-                SUDO_CMD="sudo"
-            else
-                SUDO_CMD=""
-            fi
-            if [ -f /etc/os-release ]; then
-                . /etc/os-release
-                OS_ID_TEMP=$ID
-                if [[ "$OS_ID_TEMP" == "ubuntu" || "$OS_ID_TEMP" == "debian" ]]; then
-                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
-                elif [[ "$OS_ID_TEMP" == "centos" || "$OS_ID_TEMP" == "rhel" || "$OS_ID_TEMP" == "fedora" ]]; then
-                    # Check if /usr/local/bin/docker-compose exists, otherwise default to docker-compose
-                    if [ -x "/usr/local/bin/docker-compose" ]; then
-                        export COMPOSE_CMD="$SUDO_CMD /usr/local/bin/docker-compose"
-                    else
-                        export COMPOSE_CMD="$SUDO_CMD docker-compose"
-                    fi
-                else # Fallback for unknown OS if marker file was somehow created
-                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
-                fi
-            else # Fallback if /etc/os-release is not found
-                 export COMPOSE_CMD="$SUDO_CMD docker-compose"
-            fi
-        fi
-        return
-    fi
-
     echo "--- Checking and installing required system dependencies... ---"
     
     # Determine sudo command
@@ -133,10 +97,6 @@ install_dependencies() {
     $SUDO_CMD systemctl enable docker
 
     echo -e "${GREEN}--- All dependencies are installed and configured. ---${NC}"
-
-    # Create the marker file after successful installation
-    echo "Creating dependency marker file: ${DEPS_MARKER_FILE}"
-    touch "${DEPS_MARKER_FILE}"
 }
 
 # Function to update the system: pull git changes, rebuild and restart services
@@ -162,11 +122,7 @@ update_system() {
         exit 1
     fi
 
-    # 2. Ensure SDK is present before rebuilding
-    echo "Ensuring Dahua NetSDK .whl file is available for build..."
-    handle_sdk # Ensure the .whl file is in ./app/
-
-    # 3. Rebuild docker images
+    # 2. Rebuild docker images
     echo "Rebuilding Docker images if necessary..."
     if $COMPOSE_CMD build; then
         echo -e "${GREEN}Docker images rebuilt successfully.${NC}"
@@ -194,13 +150,17 @@ update_system() {
 # Function to handle SDK download and preparation
 handle_sdk() {
     echo "--- Checking for Dahua NetSDK... ---"
-    # Check if a .whl file already exists in the app directory
-    if [ -n "$(find "${APP_DIR}" -maxdepth 1 -name '*.whl' -print -quit)" ]; then
-        echo -e "${GREEN}--- SDK .whl file already exists. Skipping download. ---${NC}"
+    # Check if any .whl file already exists in the app directory.
+    # If it does, we assume it's the correct one and skip.
+    local existing_whl_file
+    existing_whl_file=$(find "${APP_DIR}" -maxdepth 1 -name '*.whl' -print -quit)
+
+    if [ -n "$existing_whl_file" ]; then
+        echo -e "${GREEN}--- SDK .whl file ('${existing_whl_file#${APP_DIR}/}') already exists in ${APP_DIR}. Skipping download. ---${NC}"
         return
     fi
 
-    echo -e "${YELLOW}--- SDK not found. Starting download and preparation... ---${NC}"
+    echo -e "${YELLOW}--- SDK .whl file not found in ${APP_DIR}. Starting download and preparation... ---${NC}"
     
     # Create a temporary directory for the SDK
     mkdir -p "${SDK_TEMP_DIR}"
@@ -227,26 +187,28 @@ handle_sdk() {
     fi
 
     # Find the .whl file within the unzipped contents
-    local whl_file
-    whl_file=$(find "${SDK_TEMP_DIR}" -name "*.whl")
+    local found_whl_file_in_temp
+    found_whl_file_in_temp=$(find "${SDK_TEMP_DIR}" -name "*.whl" | head -n 1)
 
-    if [ -z "$whl_file" ]; then
-        echo -e "${RED}Error: Could not find .whl file in the downloaded SDK archive.${NC}"
-        exit 1
-    elif [ $(echo "$whl_file" | wc -l) -gt 1 ]; then
-        echo -e "${RED}Error: Multiple .whl files found. Unsure which one to use.${NC}"
+    if [ -z "$found_whl_file_in_temp" ]; then
+        echo -e "${RED}Error: Could not find any .whl file in the downloaded SDK archive.${NC}"
+        rm -rf "${SDK_TEMP_DIR}"
         exit 1
     fi
 
-    # Move the .whl file to the app directory
-    echo "Moving .whl file to ${APP_DIR}/"
-    mv "${whl_file}" "${APP_DIR}/"
+    if [ $(find "${SDK_TEMP_DIR}" -name "*.whl" | wc -l) -gt 1 ]; then
+        echo -e "${YELLOW}Warning: Multiple .whl files found in SDK archive. Using the first one: $(basename "${found_whl_file_in_temp}")${NC}"
+    fi
+
+    # Move the found .whl file (with its original name) to the app directory
+    echo "Moving .whl file '$(basename "${found_whl_file_in_temp}")' to ${APP_DIR}/"
+    mv "${found_whl_file_in_temp}" "${APP_DIR}/"
 
     # Clean up the temporary directory
     echo "Cleaning up temporary files..."
     rm -rf "${SDK_TEMP_DIR}"
 
-    echo -e "${GREEN}--- SDK has been successfully prepared. ---${NC}"
+    echo -e "${GREEN}--- SDK has been successfully prepared in ${APP_DIR}. ---${NC}"
 }
 
 # Function to handle the creation of config files from examples
@@ -307,8 +269,8 @@ case $COMMAND in
         install_dependencies
         handle_config_creation
         handle_sdk
-        echo "--- Creating required host directories... ---"
-        mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}"
+        echo "--- Creating required directories... ---"
+        mkdir -p "${IMAGE_DIR}" "${LOG_DIR}"
         echo "--- Building and starting services... ---"
         $COMPOSE_CMD up --build -d
         echo -e "${GREEN}--- Services started successfully. ---${NC}"
@@ -341,46 +303,38 @@ case $COMMAND in
 
         if [ "$FORCE_CLEAN" = true ]; then
             echo -e "${YELLOW}--- Force cleaning environment... ---${NC}"
-            echo "Stopping and removing containers, and the MariaDB named volume (${DB_DATA_VOLUME_NAME})..."
+            echo "Stopping and removing containers..."
             $COMPOSE_CMD down -v # Removes containers and anonymous volumes
-            docker volume rm "${DB_DATA_VOLUME_NAME}" 2>/dev/null || echo -e "${YELLOW}Volume ${DB_DATA_VOLUME_NAME} not found or already removed.${NC}"
-
-            echo "Deleting data from host-mounted log and image directories (./app/anpr_images, ./app/logs)..."
-            rm -rf "${IMAGE_DIR_HOST}/"*
-            rm -rf "${LOG_DIR_HOST}/"*
-            # No longer removing ./app/db/* as it's a named volume.
-            mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}" # Recreate dirs
-            echo -e "${GREEN}--- All services, containers, MariaDB named volume, and host image/log data have been removed. ---${NC}"
+            echo "Deleting data from host-mounted directories (./app/db, ./app/anpr_images, ./app/logs)..."
+            rm -rf "${APP_DIR}/db/"*
+            rm -rf "${IMAGE_DIR}/"*
+            rm -rf "${LOG_DIR}/"*
+            mkdir -p "${APP_DIR}/db" "${IMAGE_DIR}" "${LOG_DIR}" # Recreate dirs
+            echo -e "${GREEN}--- All services, containers, and application data from host volumes have been removed. ---${NC}"
         else
             echo -e "${RED}WARNING: This will stop all services and remove containers.${NC}"
-            echo -e "${RED}You will also be asked if you want to permanently delete:${NC}"
-            echo -e "${RED}  - Captured images in ${IMAGE_DIR_HOST}"
-            echo -e "${RED}  - Log files in ${LOG_DIR_HOST}"
-            echo -e "${RED}  - The MariaDB database volume ('${DB_DATA_VOLUME_NAME}')"
+            echo -e "${RED}You will also be asked if you want to permanently delete data from host-mounted volumes:${NC}"
+            echo -e "${RED}  - ./app/db (database data)"
+            echo -e "${RED}  - ./app/anpr_images (captured images)"
+            echo -e "${RED}  - ./app/logs (application logs)"
             read -p "Are you sure you want to stop services and remove containers? (y/N) " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 echo "--- Stopping services and removing containers... ---"
-                $COMPOSE_CMD down -v # -v also removes anonymous volumes
+                $COMPOSE_CMD down -v
                 echo -e "${GREEN}--- Services stopped and containers removed. ---${NC}"
 
-                read -p "Do you also want to delete all data in ${IMAGE_DIR_HOST}, ${LOG_DIR_HOST}, and the MariaDB volume (${DB_DATA_VOLUME_NAME})? This is IRREVERSIBLE. (y/N) " -n 1 -r
+                read -p "Do you also want to delete all data in ./app/db, ./app/anpr_images, and ./app/logs? This is IRREVERSIBLE. (y/N) " -n 1 -r
                 echo
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    echo "Deleting ${IMAGE_DIR_HOST}/*, ${LOG_DIR_HOST}/*..."
-                    rm -rf "${IMAGE_DIR_HOST}/"*
-                    rm -rf "${LOG_DIR_HOST}/"*
-                    mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}" # Recreate dirs
-
-                    echo "Attempting to remove MariaDB volume: ${DB_DATA_VOLUME_NAME}..."
-                    if docker volume rm "${DB_DATA_VOLUME_NAME}" 2>/dev/null; then
-                        echo -e "${GREEN}MariaDB volume '${DB_DATA_VOLUME_NAME}' removed successfully.${NC}"
-                    else
-                        echo -e "${YELLOW}MariaDB volume '${DB_DATA_VOLUME_NAME}' not found or could not be removed (it might not exist if services never ran or were already cleaned).${NC}"
-                    fi
-                    echo -e "${GREEN}--- All specified application data has been removed. ---${NC}"
+                    echo "Deleting ./app/db/*, ./app/anpr_images/*, ./app/logs/*..."
+                    rm -rf "${APP_DIR}/db/"*
+                    rm -rf "${IMAGE_DIR}/"*
+                    rm -rf "${LOG_DIR}/"*
+                    mkdir -p "${APP_DIR}/db" "${IMAGE_DIR}" "${LOG_DIR}" # Recreate dirs
+                    echo -e "${GREEN}--- All application data from host volumes has been removed. ---${NC}"
                 else
-                    echo -e "${YELLOW}--- Application data (images, logs, DB volume) remains. ---${NC}"
+                    echo -e "${YELLOW}--- Application data on host (./app/db, ./app/anpr_images, ./app/logs) remains. ---${NC}"
                 fi
             else
                 echo "--- Clean operation cancelled. ---"
