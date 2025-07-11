@@ -1,72 +1,93 @@
 # docker-compose.yml
-# Final version: 2025-07-08
-# This file orchestrates the ANPR listener, web UI, MariaDB, and Cloudflare tunnel as separate services.
+# This file orchestrates the ANPR listener, DB manager, web UI, MariaDB, and Cloudflare tunnel.
 version: '3.8'
 
 services:
-  # Service 1: The ANPR listener
-  # This container runs the get_plates.py script to listen for camera events.
   anpr-listener:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: anpr_listener_service
     env_file: .env
+    environment:
+      - DB_MANAGER_URL=http://anpr-db-manager:5001/event
+      # Add any other specific environment variables for the listener if needed
     restart: always
+    # WORKDIR /app is set in Dockerfile
     command: python anpr_listener.py
     volumes:
-      - ./app/anpr_images:/app/anpr_images
-      - ./app/logs:/app/logs
       - ./app/config.ini:/app/config.ini:ro
+      - ./app/logs:/app/logs
+      # anpr-listener does not save images directly anymore, anpr_images volume removed from here
+    depends_on:
+      - anpr-db-manager # Listener needs DB manager to be available to send events
+
+  anpr-db-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anpr_db_manager_service
+    env_file: .env
+    environment:
+      - FLASK_RUN_PORT=5001
+      # MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE, DB_HOST are in .env
+    restart: always
+    # WORKDIR /app is set in Dockerfile
+    command: gunicorn --bind 0.0.0.0:5001 --workers 2 --timeout 120 anpr_db_manager:app
+    volumes:
+      - ./app/config.ini:/app/config.ini:ro
+      - ./app/anpr_images:/app/anpr_images # For saving received images
+      - ./app/logs:/app/logs
     depends_on:
       mariadb:
         condition: service_healthy
 
-  # Service 2: The Web Interface
-  # This container runs the Flask app with Gunicorn.
   anpr-web-ui:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: anpr_web_ui_service
     env_file: .env
+    environment:
+      - FLASK_RUN_PORT=5000
+      # MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE, DB_HOST are in .env
     restart: always
-    command: gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 app:app
+    # WORKDIR /app is set in Dockerfile
+    command: gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 anpr_web:app
     ports:
-      - "5000:5000"
+      - "5000:5000" # Expose port 5000 for Cloudflared and local access
     volumes:
-      - ./app/anpr_images:/app/anpr_images:ro
       - ./app/config.ini:/app/config.ini:ro
+      - ./app/anpr_images:/app/anpr_images:ro # Read-only access to images
+      - ./app/logs:/app/logs
+      # ./app/templates is part of the image, no need to mount unless actively developing templates
     depends_on:
-      - anpr-listener
-      - mariadb
+      mariadb:
+        condition: service_healthy
+      # anpr-db-manager is not a direct dependency for web-ui to start, but data will be missing if it's down.
 
-  # Service 3: The Cloudflare Tunnel
-  # This service creates a secure tunnel to the web interface.
   cloudflared-tunnel:
     image: cloudflare/cloudflared:latest
-    container_name: anpr_tunnel
+    container_name: anpr_tunnel_service # Renamed for consistency
     restart: always
+    # Token should be in .env file, which is loaded by cloudflared if command is just 'tunnel run'
+    # Or explicitly pass: tunnel --no-autoupdate run --token ${CLOUDFLARE_TOKEN}
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TOKEN}
     depends_on:
-      - anpr-web-ui
+      - anpr-web-ui # Tunnel should start after the web UI is available
 
-  # Service 4: MariaDB Database
   mariadb:
     image: mariadb:10.6
-    container_name: anpr_mariadb
+    container_name: anpr_mariadb_service # Renamed for consistency
     restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    env_file: .env # MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD
     volumes:
-      - ./app/db:/var/lib/mysql
+      - anpr_db_data:/var/lib/mysql # Use a named volume for DB data persistence
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-volumes: {}
+volumes:
+  anpr_db_data: # Define the named volume for MariaDB
