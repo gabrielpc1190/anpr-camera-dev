@@ -1,0 +1,47 @@
+# Git specific
+.git/
+.gitignore
+
+# Docker specific
+# Dockerfile # Not ignoring this as it's at the root of the build context.
+
+# Python specific
+__pycache__/
+*.py[co]
+*.egg-info/
+.env
+.venv/
+env/
+venv/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Application Specific
+# Logs and captured images are runtime data, not part of the build
+app/logs/
+app/anpr_images/
+
+# SDK temporary directory and downloaded zip
+.sdk_temp/
+dahua_sdk.zip # If setup.sh doesn't clean it or it's manually downloaded
+
+# Host setup script (not needed in image)
+setup.sh
+
+# READMEs and other markdown docs (optional, but saves image space)
+*.md
+
+# Example files that are not needed in the final image
+.env.example
+app/config.ini.example
+
+# Other scripts not directly run by services in Docker if any
+# e.g. app/run_listener.sh (if not used as an entrypoint)
+
+# Test files if any (none in current structure, but good practice)
+# tests/
+# *.test.py
+# pytest.ini
+# .coveragerc
