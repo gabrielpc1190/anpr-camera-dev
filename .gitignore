@@ -29,3 +29,6 @@ config.ini
 
 # Dahua SDK zip file (if downloaded locally and not cleaned up by setup.sh)
 dahua_sdk.zip
+
+# MariaDB data directory (bind mount)
+app/db/

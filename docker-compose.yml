@@ -18,7 +18,7 @@ services:
     volumes:
       - ./app/config.ini:/app/config.ini:ro
       - ./app/logs:/app/logs
-      # anpr-listener does not save images directly anymore, anpr_images volume removed from here
+      - ./app/anpr_images:/app/anpr_images # Mount for saving images
     depends_on:
       - anpr-db-manager # Listener needs DB manager to be available to send events
 
@@ -95,12 +95,14 @@ services:
     restart: always
     env_file: .env # MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD
     volumes:
-      - anpr_db_data:/var/lib/mysql # Use a named volume for DB data persistence
+      - ./app/db:/var/lib/mysql # Use bind mount for DB data persistence in ./app/db
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-volumes:
-  anpr_db_data: # Define the named volume for MariaDB
+# Named volume anpr_db_data is no longer used for MariaDB, can be removed if not used by other services.
+# For now, let's comment it out or remove it if confirmed it's not needed elsewhere.
+# volumes:
+#   anpr_db_data: # Define the named volume for MariaDB

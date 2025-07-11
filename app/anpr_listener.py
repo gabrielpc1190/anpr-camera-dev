@@ -5,6 +5,7 @@ import sys
 import time
 import datetime
 import json
+import configparser # Added for reading config.ini
 from ctypes import POINTER, cast, c_ubyte
 
 from NetSDK.NetSDK import NetClient
@@ -13,18 +14,47 @@ from NetSDK.SDK_Enum import *
 from NetSDK.SDK_Callback import *
 
 # --- CONFIGURACIÓN DE CÁMARAS ---
-USER_NAME = b"admin"
-PASSWORD = b"lb37AhH7zjzODf."
-PORT = 37777
+USER_NAME = b"admin" # Should ideally be in config or env
+PASSWORD = b"lb37AhH7zjzODf." # Should ideally be in config or env
+PORT = 37777 # Should ideally be in config or env
 
-CAMERAS = [
+CAMERAS = [ # This could also be moved to config.ini for more flexibility
     {"ip": "10.45.14.11", "login_id": 0, "attach_id": 0},
     {"ip": "10.45.14.12", "login_id": 0, "attach_id": 0},
 ]
 
 g_attach_handle_map = {}
-LOG_FILE = "anpr.log"
-PACKET_LOG_FILE = "event_packets.log"
+# LOG_FILE = "anpr.log" # Main logging will go to stdout for Docker
+# PACKET_LOG_FILE = "event_packets.log" # Main logging will go to stdout for Docker
+
+# --- Configuration Loading ---
+config = configparser.ConfigParser(interpolation=None)
+# Assuming config.ini is in /app/ as per Docker setup
+CONFIG_FILE_PATH = '/app/config.ini'
+# A fallback for local dev could be added but less critical for listener if it only needs image path
+if not os.path.exists(CONFIG_FILE_PATH):
+    # This is a critical error if config.ini is needed for more than just image path
+    print(f"CRITICAL: config.ini not found at {CONFIG_FILE_PATH}. Exiting.")
+    sys.exit(1)
+config.read(CONFIG_FILE_PATH)
+
+try:
+    IMAGE_SAVE_DIR = config.get('Paths', 'ImageDirectory', fallback='/app/anpr_images')
+    LOG_DIR = config.get('General', 'LogDirectory', fallback='/app/logs') # For SDK log & packet log
+except configparser.Error as e:
+    print(f"Error reading from config.ini: {e}. Using default paths.")
+    IMAGE_SAVE_DIR = '/app/anpr_images'
+    LOG_DIR = '/app/logs'
+
+# Ensure IMAGE_SAVE_DIR exists (listener is responsible for saving images here)
+os.makedirs(IMAGE_SAVE_DIR, exist_ok=True)
+# Ensure LOG_DIR exists (for SDK debug log and potentially packet log if kept separate)
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Define log file paths using the configured LOG_DIR
+SDK_DEBUG_LOG_FILE = os.path.join(LOG_DIR, "netsdk_debug_listener.log") # Specific name
+PACKET_LOG_FILE = os.path.join(LOG_DIR, "event_packets_listener.log") # Specific name
+
 
 # --- FUNCIÓN CALLBACK PARA PROCESAR EVENTOS ---
 
@@ -42,14 +72,31 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
             utc = alarm_info.UTC
             event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
             
+            # Safely access attributes from alarm_info.stTrafficCar
+            st_traffic_car = alarm_info.stTrafficCar
+
+            plate_number_bytes = getattr(st_traffic_car, 'szPlateNumber', b'')
+            plate_number = plate_number_bytes.decode('gb2312', errors='ignore').strip() if plate_number_bytes else "N/A"
+
+            vehicle_color_bytes = getattr(st_traffic_car, 'szVehicleColor', b'')
+            vehicle_color = vehicle_color_bytes.decode('gb2312', errors='ignore').strip() if vehicle_color_bytes else "N/A"
+
+            # Assuming szVehicleType was the actual field name from the error log, let's add it safely
+            vehicle_type_bytes = getattr(st_traffic_car, 'szVehicleType', b'')
+            vehicle_type = vehicle_type_bytes.decode('gb2312', errors='ignore').strip() if vehicle_type_bytes else "N/A"
+
+            vehicle_speed = getattr(st_traffic_car, 'nSpeed', 0) # Default to 0 if not present
+            lane = getattr(st_traffic_car, 'nLane', 0) # Default to 0 if not present
+
             packet_details = {
                 "timestamp_capture": datetime.datetime.now().isoformat(),
                 "camera_ip": g_attach_handle_map.get(lAnalyzerHandle, "Unknown IP"),
                 "event_time_utc": event_time.isoformat(),
-                "plate_number": alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip(),
-                "vehicle_color": alarm_info.stTrafficCar.szVehicleColor.decode('gb2312', errors='ignore').strip(),
-                "vehicle_speed": alarm_info.stTrafficCar.nSpeed,
-                "lane": alarm_info.stTrafficCar.nLane
+                "plate_number": plate_number,
+                "vehicle_type": vehicle_type, # Added based on the error log
+                "vehicle_color": vehicle_color,
+                "vehicle_speed": vehicle_speed,
+                "lane": lane
             }
 
             with open(PACKET_LOG_FILE, "a") as f:
@@ -70,9 +117,12 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
                 # Crear un nombre de archivo único
                 time_str = event_time.strftime("%Y%m%d_%H%M%S")
                 filename = f"{time_str}_{camera_ip.replace('.', '-')}_{plate_number}.jpg"
-                filepath = os.path.join("capturas", filename)
+                # Use IMAGE_SAVE_DIR read from config
+                filepath = os.path.join(IMAGE_SAVE_DIR, filename)
 
                 # Guardar el búfer de la imagen en el archivo
+                # Ensure directory exists (it should have been created at startup, but good for robustness)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
                 with open(filepath, "wb") as f:
                     f.write(pBuffer[:dwBufSize])
 
@@ -91,10 +141,12 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
             time_str = event_time.strftime("%Y-%m-%d %H:%M:%S")
 
             log_message = f"[{time_str}] [{camera_ip}] Plate Detected: {plate_number}"
-            print(log_message)
+            print(log_message) # This will go to Docker logs (stdout)
 
-            with open(LOG_FILE, "a") as f:
-                f.write(log_message + "\n")
+            # Removed writing to local LOG_FILE as Docker handles stdout logging.
+            # If separate file logging is desired for plate detections, it should use LOG_DIR
+            # with open(os.path.join(LOG_DIR, "plate_detections.log"), "a") as f:
+            #     f.write(log_message + "\n")
 
         except Exception as e:
             print(f"Error processing plate data: {e}")
@@ -105,13 +157,19 @@ def main():
     print("Initializing SDK...")
     sdk = NetClient()
     
+    # Setup SDK logging to use the configured LOG_DIR
     log_info = LOG_SET_PRINT_INFO()
     log_info.dwSize = sizeof(LOG_SET_PRINT_INFO)
     log_info.bSetFilePath = 1
-    log_path = os.path.join(os.getcwd(), "sdk_debug.log").encode('gbk')
-    log_info.szLogFilePath = log_path
+    # log_path = os.path.join(os.getcwd(), SDK_DEBUG_LOG_FILE).encode('gbk') # Original was relative
+    log_path_sdk = SDK_DEBUG_LOG_FILE.encode('gbk') # Use absolute path from config
+    log_info.szLogFilePath = log_path_sdk
+
+    # Ensure the directory for the SDK log exists (os.makedirs was called for LOG_DIR already)
+    # os.makedirs(os.path.dirname(SDK_DEBUG_LOG_FILE), exist_ok=True) # Already done for LOG_DIR
+
     sdk.LogOpen(log_info)
-    print(f"SDK logging enabled. Log file: {log_path.decode()}")
+    print(f"SDK logging enabled. Log file: {SDK_DEBUG_LOG_FILE}")
 
     sdk.InitEx(None)
     
