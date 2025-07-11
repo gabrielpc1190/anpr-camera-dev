@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.env
+.venv/
+env/
+venv/
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Application Specific
+app/logs/.dependencies_checked
+# If anpr_images or logs directories on host should not be committed (they are volume mounts)
+# app/anpr_images/
+# app/logs/
+# (Uncomment above if you don't want to commit example images/logs, but often these dirs are empty in repo)
+
+# SDK temporary directory (if created locally and not just in setup.sh)
+.sdk_temp/
+
+# Dahua SDK zip file (if downloaded locally and not cleaned up by setup.sh)
+dahua_sdk.zip

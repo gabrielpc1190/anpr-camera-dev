@@ -11,8 +11,10 @@ NC='\033[0m' # No Color
 # --- Configuration ---
 # Define paths directly in the script, as they are related to the project structure
 APP_DIR="app"
-IMAGE_DIR="${APP_DIR}/anpr_images"
-LOG_DIR="${APP_DIR}/logs"
+IMAGE_DIR_HOST="${APP_DIR}/anpr_images" # Path on the host for images
+LOG_DIR_HOST="${APP_DIR}/logs"         # Path on the host for logs
+DB_DATA_VOLUME_NAME="anpr_db_data"     # Named volume for MariaDB data
+DEPS_MARKER_FILE="${LOG_DIR_HOST}/.dependencies_checked" # Marker file for dependency installation
 SDK_TEMP_DIR=".sdk_temp"
 ENV_FILE=".env"
 CONFIG_INI="${APP_DIR}/config.ini"
@@ -42,6 +44,40 @@ usage() {
 
 # Function to install required system dependencies
 install_dependencies() {
+    # Ensure LOG_DIR_HOST exists before trying to use it for the marker file
+    mkdir -p "${LOG_DIR_HOST}"
+
+    if [ -f "${DEPS_MARKER_FILE}" ]; then
+        echo -e "${GREEN}--- System dependencies appear to be already checked/installed. Skipping. ---${NC}"
+        # Still need to export COMPOSE_CMD if not set
+        if [ -z "$COMPOSE_CMD" ]; then
+            if [ "$(id -u)" -ne 0 ]; then
+                SUDO_CMD="sudo"
+            else
+                SUDO_CMD=""
+            fi
+            if [ -f /etc/os-release ]; then
+                . /etc/os-release
+                OS_ID_TEMP=$ID
+                if [[ "$OS_ID_TEMP" == "ubuntu" || "$OS_ID_TEMP" == "debian" ]]; then
+                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                elif [[ "$OS_ID_TEMP" == "centos" || "$OS_ID_TEMP" == "rhel" || "$OS_ID_TEMP" == "fedora" ]]; then
+                    # Check if /usr/local/bin/docker-compose exists, otherwise default to docker-compose
+                    if [ -x "/usr/local/bin/docker-compose" ]; then
+                        export COMPOSE_CMD="$SUDO_CMD /usr/local/bin/docker-compose"
+                    else
+                        export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                    fi
+                else # Fallback for unknown OS if marker file was somehow created
+                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                fi
+            else # Fallback if /etc/os-release is not found
+                 export COMPOSE_CMD="$SUDO_CMD docker-compose"
+            fi
+        fi
+        return
+    fi
+
     echo "--- Checking and installing required system dependencies... ---"
     
     # Determine sudo command
@@ -97,6 +133,10 @@ install_dependencies() {
     $SUDO_CMD systemctl enable docker
 
     echo -e "${GREEN}--- All dependencies are installed and configured. ---${NC}"
+
+    # Create the marker file after successful installation
+    echo "Creating dependency marker file: ${DEPS_MARKER_FILE}"
+    touch "${DEPS_MARKER_FILE}"
 }
 
 # Function to update the system: pull git changes, rebuild and restart services
@@ -263,8 +303,8 @@ case $COMMAND in
         install_dependencies
         handle_config_creation
         handle_sdk
-        echo "--- Creating required directories... ---"
-        mkdir -p "${IMAGE_DIR}" "${LOG_DIR}"
+        echo "--- Creating required host directories... ---"
+        mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}"
         echo "--- Building and starting services... ---"
         $COMPOSE_CMD up --build -d
         echo -e "${GREEN}--- Services started successfully. ---${NC}"
@@ -297,38 +337,46 @@ case $COMMAND in
 
         if [ "$FORCE_CLEAN" = true ]; then
             echo -e "${YELLOW}--- Force cleaning environment... ---${NC}"
-            echo "Stopping and removing containers..."
+            echo "Stopping and removing containers, and the MariaDB named volume (${DB_DATA_VOLUME_NAME})..."
             $COMPOSE_CMD down -v # Removes containers and anonymous volumes
-            echo "Deleting data from host-mounted directories (./app/db, ./app/anpr_images, ./app/logs)..."
-            rm -rf "${APP_DIR}/db/"*
-            rm -rf "${IMAGE_DIR}/"*
-            rm -rf "${LOG_DIR}/"*
-            mkdir -p "${APP_DIR}/db" "${IMAGE_DIR}" "${LOG_DIR}" # Recreate dirs
-            echo -e "${GREEN}--- All services, containers, and application data from host volumes have been removed. ---${NC}"
+            docker volume rm "${DB_DATA_VOLUME_NAME}" 2>/dev/null || echo -e "${YELLOW}Volume ${DB_DATA_VOLUME_NAME} not found or already removed.${NC}"
+
+            echo "Deleting data from host-mounted log and image directories (./app/anpr_images, ./app/logs)..."
+            rm -rf "${IMAGE_DIR_HOST}/"*
+            rm -rf "${LOG_DIR_HOST}/"*
+            # No longer removing ./app/db/* as it's a named volume.
+            mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}" # Recreate dirs
+            echo -e "${GREEN}--- All services, containers, MariaDB named volume, and host image/log data have been removed. ---${NC}"
         else
             echo -e "${RED}WARNING: This will stop all services and remove containers.${NC}"
-            echo -e "${RED}You will also be asked if you want to permanently delete data from host-mounted volumes:${NC}"
-            echo -e "${RED}  - ./app/db (database data)"
-            echo -e "${RED}  - ./app/anpr_images (captured images)"
-            echo -e "${RED}  - ./app/logs (application logs)"
+            echo -e "${RED}You will also be asked if you want to permanently delete:${NC}"
+            echo -e "${RED}  - Captured images in ${IMAGE_DIR_HOST}"
+            echo -e "${RED}  - Log files in ${LOG_DIR_HOST}"
+            echo -e "${RED}  - The MariaDB database volume ('${DB_DATA_VOLUME_NAME}')"
             read -p "Are you sure you want to stop services and remove containers? (y/N) " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 echo "--- Stopping services and removing containers... ---"
-                $COMPOSE_CMD down -v
+                $COMPOSE_CMD down -v # -v also removes anonymous volumes
                 echo -e "${GREEN}--- Services stopped and containers removed. ---${NC}"
 
-                read -p "Do you also want to delete all data in ./app/db, ./app/anpr_images, and ./app/logs? This is IRREVERSIBLE. (y/N) " -n 1 -r
+                read -p "Do you also want to delete all data in ${IMAGE_DIR_HOST}, ${LOG_DIR_HOST}, and the MariaDB volume (${DB_DATA_VOLUME_NAME})? This is IRREVERSIBLE. (y/N) " -n 1 -r
                 echo
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    echo "Deleting ./app/db/*, ./app/anpr_images/*, ./app/logs/*..."
-                    rm -rf "${APP_DIR}/db/"*
-                    rm -rf "${IMAGE_DIR}/"*
-                    rm -rf "${LOG_DIR}/"*
-                    mkdir -p "${APP_DIR}/db" "${IMAGE_DIR}" "${LOG_DIR}" # Recreate dirs
-                    echo -e "${GREEN}--- All application data from host volumes has been removed. ---${NC}"
+                    echo "Deleting ${IMAGE_DIR_HOST}/*, ${LOG_DIR_HOST}/*..."
+                    rm -rf "${IMAGE_DIR_HOST}/"*
+                    rm -rf "${LOG_DIR_HOST}/"*
+                    mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}" # Recreate dirs
+
+                    echo "Attempting to remove MariaDB volume: ${DB_DATA_VOLUME_NAME}..."
+                    if docker volume rm "${DB_DATA_VOLUME_NAME}" 2>/dev/null; then
+                        echo -e "${GREEN}MariaDB volume '${DB_DATA_VOLUME_NAME}' removed successfully.${NC}"
+                    else
+                        echo -e "${YELLOW}MariaDB volume '${DB_DATA_VOLUME_NAME}' not found or could not be removed (it might not exist if services never ran or were already cleaned).${NC}"
+                    fi
+                    echo -e "${GREEN}--- All specified application data has been removed. ---${NC}"
                 else
-                    echo -e "${YELLOW}--- Application data on host (./app/db, ./app/anpr_images, ./app/logs) remains. ---${NC}"
+                    echo -e "${YELLOW}--- Application data (images, logs, DB volume) remains. ---${NC}"
                 fi
             else
                 echo "--- Clean operation cancelled. ---"
