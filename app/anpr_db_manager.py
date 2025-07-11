@@ -125,7 +125,6 @@ def ensure_anpr_events_table():
     except mysql.connector.Error as err_table:
         logger.error(f"Failed to create/ensure anpr_events table: {err_table}", exc_info=True)
 
-
 def get_db_connection():
     """Gets a new DB connection or pings existing one. Reconnects if necessary."""
     global DB_CONNECTION
@@ -192,8 +191,6 @@ def insert_anpr_event_db(event_data):
         logger.error(f"Generic error during event insertion: {e_gen}. Data: {event_data}", exc_info=True)
         if conn and conn.is_connected(): conn.rollback()
         return False
-
-
 def save_image_from_request(image_file, event_data):
     """Saves the image from the request and returns the filename, or None."""
     if not image_file:
@@ -263,16 +260,35 @@ def handle_event():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    # Basic health check, can be expanded to check DB connection too
-    db_ok = False
+    db_connected = False
+    table_exists = False
     conn = get_db_connection()
-    if conn and conn.is_connected():
-        db_ok = True
 
-    if db_ok:
-        return jsonify({"status": "healthy", "database_connection": "ok"}), 200
-    else:
-        return jsonify({"status": "unhealthy", "database_connection": "error"}), 503
+    if conn and conn.is_connected():
+        db_connected = True
+        try:
+            cursor = conn.cursor()
+            # Check if the anpr_events table exists
+            # Using database name from env/default to qualify table name if needed, though usually not if DB is selected.
+            cursor.execute(f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '{DB_NAME}' AND table_name = 'anpr_events'")
+            if cursor.fetchone()[0] == 1:
+                table_exists = True
+            else:
+                logger.warning(f"Health check: Table 'anpr_events' does not exist in database '{DB_NAME}'.")
+            cursor.close()
+        except mysql.connector.Error as e:
+            logger.error(f"Health check: Database error while checking for table: {e}")
+            db_connected = False # If query fails, consider DB not fully healthy for this check
+        except Exception as e_gen:
+            logger.error(f"Health check: Generic error while checking for table: {e_gen}")
+            db_connected = False # Treat generic errors as a problem too
+
+    if db_connected and table_exists:
+        return jsonify({"status": "healthy", "database_connection": "ok", "anpr_events_table": "exists"}), 200
+    elif db_connected and not table_exists:
+        return jsonify({"status": "unhealthy", "database_connection": "ok", "anpr_events_table": "missing"}), 503
+    else: # db_connected is False
+        return jsonify({"status": "unhealthy", "database_connection": "error", "anpr_events_table": "unknown"}), 503
 
 def close_db_connection_on_exit():
     global DB_CONNECTION
