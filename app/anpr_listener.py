@@ -42,14 +42,31 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
             utc = alarm_info.UTC
             event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
             
+            # Safely access attributes from alarm_info.stTrafficCar
+            st_traffic_car = alarm_info.stTrafficCar
+
+            plate_number_bytes = getattr(st_traffic_car, 'szPlateNumber', b'')
+            plate_number = plate_number_bytes.decode('gb2312', errors='ignore').strip() if plate_number_bytes else "N/A"
+
+            vehicle_color_bytes = getattr(st_traffic_car, 'szVehicleColor', b'')
+            vehicle_color = vehicle_color_bytes.decode('gb2312', errors='ignore').strip() if vehicle_color_bytes else "N/A"
+
+            # Assuming szVehicleType was the actual field name from the error log, let's add it safely
+            vehicle_type_bytes = getattr(st_traffic_car, 'szVehicleType', b'')
+            vehicle_type = vehicle_type_bytes.decode('gb2312', errors='ignore').strip() if vehicle_type_bytes else "N/A"
+
+            vehicle_speed = getattr(st_traffic_car, 'nSpeed', 0) # Default to 0 if not present
+            lane = getattr(st_traffic_car, 'nLane', 0) # Default to 0 if not present
+
             packet_details = {
                 "timestamp_capture": datetime.datetime.now().isoformat(),
                 "camera_ip": g_attach_handle_map.get(lAnalyzerHandle, "Unknown IP"),
                 "event_time_utc": event_time.isoformat(),
-                "plate_number": alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip(),
-                "vehicle_color": alarm_info.stTrafficCar.szVehicleColor.decode('gb2312', errors='ignore').strip(),
-                "vehicle_speed": alarm_info.stTrafficCar.nSpeed,
-                "lane": alarm_info.stTrafficCar.nLane
+                "plate_number": plate_number,
+                "vehicle_type": vehicle_type, # Added based on the error log
+                "vehicle_color": vehicle_color,
+                "vehicle_speed": vehicle_speed,
+                "lane": lane
             }
 
             with open(PACKET_LOG_FILE, "a") as f:
