@@ -1,21 +1,52 @@
 [General]
-LogFile = /app/logs/anpr_events.log
+# LogDirectory is used by services to determine where to place their specific log files.
+# Example: /app/logs/anpr_listener.log, /app/logs/anpr_db_manager.log, etc.
+LogDirectory = /app/logs
+# LogFile = /app/logs/anpr_events.log ; This specific entry might be obsolete if each service manages its own log file.
 
 [Paths]
 ImageDirectory = /app/anpr_images
 
-[CAM1]
-Enabled = True
-IPAddress = 192.168.1.108
-Port = 37777
-Username = admin
-Password = your_password
-Channel = 0
+#-------------------------------------------------------------------------------
+# Dahua NetSDK Global Settings for anpr_listener.py
+#-------------------------------------------------------------------------------
+[DahuaSDK]
+# Default credentials and port for cameras.
+# These can be overridden in individual [Camera.X] sections.
+# For passwords, consider using environment variables or Docker secrets in a production setup.
+DefaultUsername = admin
+DefaultPassword = your_camera_password_here
+DefaultPort = 37777
 
-[CAM2]
-Enabled = False
-IPAddress = 192.168.1.109
-Port = 37777
-Username = admin
-Password = your_password
-Channel = 0
+#-------------------------------------------------------------------------------
+# Individual Camera Configurations for anpr_listener.py
+#-------------------------------------------------------------------------------
+# Use sections starting with "Camera." e.g., [Camera.CAM1], [Camera.FrontGate]
+# The part after "Camera." is used as a camera identifier/key.
+
+[Camera.CAM1]
+Enabled = true
+IPAddress = 10.45.14.11
+FriendlyName = Front Gate Cam
+# Optional: Override defaults from [DahuaSDK] if needed for this specific camera
+# Username =
+# Password =
+# Port =
+# Channel = 0 ; Note: Channel is used in RealLoadPictureEx, often 0. Retaining if needed.
+
+[Camera.CAM2]
+Enabled = true
+IPAddress = 10.45.14.12
+FriendlyName = Back Gate Cam
+# This camera will use DefaultUsername, DefaultPassword, DefaultPort from [DahuaSDK]
+# Channel = 0
+
+[Camera.DisabledExample]
+Enabled = false
+IPAddress = 192.168.1.200
+FriendlyName = Office Cam (Disabled)
+Username = testuser
+Password = testpass
+# Channel = 0
+
+# Add more camera sections as needed, following the [Camera.UniqueName] pattern.
