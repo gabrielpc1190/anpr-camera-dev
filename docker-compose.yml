@@ -18,7 +18,7 @@ services:
     volumes:
       - ./app/config.ini:/app/config.ini:ro
       - ./app/logs:/app/logs
-      # anpr-listener does not save images directly anymore, anpr_images volume removed from here
+      - ./app/anpr_images:/app/anpr_images # Mount for saving images
     depends_on:
       - anpr-db-manager # Listener needs DB manager to be available to send events
 
