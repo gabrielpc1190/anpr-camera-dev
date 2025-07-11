@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libxv1 \
     libgl1-mesa-glx \
+    file \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory

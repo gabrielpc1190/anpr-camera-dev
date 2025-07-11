@@ -68,9 +68,10 @@ DB_USER = os.getenv('MYSQL_USER', 'anpr_user')
 DB_PASSWORD = os.getenv('MYSQL_PASSWORD')
 DB_NAME = os.getenv('MYSQL_DATABASE', 'anpr_events')
 
+# Check for MYSQL_PASSWORD and log critically if not set, but do not exit immediately.
+# The application will attempt to start, and health checks or DB operations will fail if it's truly missing.
 if not DB_PASSWORD:
-    logger.critical("MYSQL_PASSWORD environment variable not set. Cannot connect to database.")
-    sys.exit(1)
+    logger.critical("CRITICAL: MYSQL_PASSWORD environment variable not set. Database operations will fail.")
 
 DB_CONNECTION = None
 
@@ -278,6 +279,40 @@ def get_latest_event_timestamp():
     except Exception as e:
         logger.error(f"Unexpected error in /api/events/latest_timestamp: {e}", exc_info=True)
         return jsonify({"error": "An unexpected error occurred"}), 500
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    db_connected = False
+    table_exists = False
+    conn = get_db_connection() # This will attempt to initialize if needed
+
+    if conn and conn.is_connected():
+        db_connected = True
+        try:
+            cursor = conn.cursor()
+            # Check if the anpr_events table exists
+            cursor.execute(f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '{DB_NAME}' AND table_name = 'anpr_events'")
+            if cursor.fetchone()[0] == 1:
+                table_exists = True
+            else:
+                logger.warning(f"Health check for anpr_web: Table 'anpr_events' does not exist in database '{DB_NAME}'.")
+            cursor.close()
+        except mysql.connector.Error as e:
+            logger.error(f"Health check for anpr_web: Database error while checking for table: {e}")
+            # If query fails, consider DB not fully healthy for this check, but connection itself might be ok
+            # We will rely on table_exists being false.
+        except Exception as e_gen:
+            logger.error(f"Health check for anpr_web: Generic error while checking for table: {e_gen}")
+            # Treat generic errors as a problem too
+
+    if db_connected and table_exists:
+        return jsonify({"status": "healthy", "database_connection": "ok", "anpr_events_table": "exists"}), 200
+    elif db_connected and not table_exists:
+        # This state might occur if anpr_db_manager hasn't created the table yet.
+        # The service is up, DB is connected, but not fully ready for queries.
+        return jsonify({"status": "unhealthy", "database_connection": "ok", "anpr_events_table": "missing"}), 503
+    else: # db_connected is False
+        return jsonify({"status": "unhealthy", "database_connection": "error", "anpr_events_table": "unknown"}), 503
 
 def close_db_connection_on_exit():
     global DB_CONNECTION

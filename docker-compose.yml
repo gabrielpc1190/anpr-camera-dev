@@ -72,6 +72,12 @@ services:
         condition: service_healthy
       anpr-db-manager: # Add dependency on anpr-db-manager
         condition: service_healthy # Wait for anpr-db-manager to be healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 45s # Allow more time for this service, as it depends on db-manager
 
   cloudflared-tunnel:
     image: cloudflare/cloudflared:latest
