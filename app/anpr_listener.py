@@ -14,47 +14,76 @@ from NetSDK.SDK_Struct import *
 from NetSDK.SDK_Enum import *
 from NetSDK.SDK_Callback import *
 
-# --- CONFIGURACIÓN DE CÁMARAS ---
-USER_NAME = b"admin" # Should ideally be in config or env
-PASSWORD = b"lb37AhH7zjzODf." # Should ideally be in config or env
-PORT = 37777 # Should ideally be in config or env
-
-CAMERAS = [ # This could also be moved to config.ini for more flexibility
-    {"ip": "10.45.14.11", "login_id": 0, "attach_id": 0},
-    {"ip": "10.45.14.12", "login_id": 0, "attach_id": 0},
-]
-
+# Global variable to store camera configurations, will be populated from config.ini
+CONFIGURED_CAMERAS = []
 g_attach_handle_map = {}
-# LOG_FILE = "anpr.log" # Main logging will go to stdout for Docker
-# PACKET_LOG_FILE = "event_packets.log" # Main logging will go to stdout for Docker
 
-# --- Configuration Loading ---
-config = configparser.ConfigParser(interpolation=None)
-# Assuming config.ini is in /app/ as per Docker setup
-CONFIG_FILE_PATH = '/app/config.ini'
-# A fallback for local dev could be added but less critical for listener if it only needs image path
-if not os.path.exists(CONFIG_FILE_PATH):
-    # This is a critical error if config.ini is needed for more than just image path
-    print(f"CRITICAL: config.ini not found at {CONFIG_FILE_PATH}. Exiting.")
-    sys.exit(1)
-config.read(CONFIG_FILE_PATH)
 
-try:
-    IMAGE_SAVE_DIR = config.get('Paths', 'ImageDirectory', fallback='/app/anpr_images')
-    LOG_DIR = config.get('General', 'LogDirectory', fallback='/app/logs') # For SDK log & packet log
-except configparser.Error as e:
-    print(f"Error reading from config.ini: {e}. Using default paths.")
-    IMAGE_SAVE_DIR = '/app/anpr_images'
-    LOG_DIR = '/app/logs'
+# --- Configuration Loading & Camera Setup Function ---
+def load_and_prepare_config():
+    global CONFIGURED_CAMERAS, IMAGE_SAVE_DIR, LOG_DIR, SDK_DEBUG_LOG_FILE, PACKET_LOG_FILE
 
-# Ensure IMAGE_SAVE_DIR exists (listener is responsible for saving images here)
-os.makedirs(IMAGE_SAVE_DIR, exist_ok=True)
-# Ensure LOG_DIR exists (for SDK debug log and potentially packet log if kept separate)
-os.makedirs(LOG_DIR, exist_ok=True)
+    config = configparser.ConfigParser(interpolation=None)
+    CONFIG_FILE_PATH = '/app/config.ini'
+    if not os.path.exists(CONFIG_FILE_PATH):
+        print(f"CRITICAL: config.ini not found at {CONFIG_FILE_PATH}. Exiting.")
+        sys.exit(1)
+    config.read(CONFIG_FILE_PATH)
 
-# Define log file paths using the configured LOG_DIR
-SDK_DEBUG_LOG_FILE = os.path.join(LOG_DIR, "netsdk_debug_listener.log") # Specific name
-PACKET_LOG_FILE = os.path.join(LOG_DIR, "event_packets_listener.log") # Specific name
+    try:
+        IMAGE_SAVE_DIR = config.get('Paths', 'ImageDirectory', fallback='/app/anpr_images')
+        LOG_DIR = config.get('General', 'LogDirectory', fallback='/app/logs')
+    except configparser.Error as e:
+        print(f"Error reading general paths from config.ini: {e}. Using default paths.")
+        IMAGE_SAVE_DIR = '/app/anpr_images'
+        LOG_DIR = '/app/logs'
+
+    os.makedirs(IMAGE_SAVE_DIR, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
+
+    SDK_DEBUG_LOG_FILE = os.path.join(LOG_DIR, "netsdk_debug_listener.log")
+    PACKET_LOG_FILE = os.path.join(LOG_DIR, "event_packets_listener.log")
+
+    # Load DahuaSDK defaults
+    default_username = config.get('DahuaSDK', 'DefaultUsername', fallback='admin')
+    default_password = config.get('DahuaSDK', 'DefaultPassword', fallback='') # No sensible default for password
+    default_port = config.getint('DahuaSDK', 'DefaultPort', fallback=37777) # Ensure port is int
+
+    loaded_cameras_temp = []
+    for section_name in config.sections():
+        if section_name.startswith("Camera."):
+            if config.getboolean(section_name, 'Enabled', fallback=False):
+                cam_key = section_name.split('.', 1)[1] # Get CAM1, CAM2 etc.
+                ip_address = config.get(section_name, 'IPAddress', fallback=None)
+                if not ip_address:
+                    print(f"Warning: IPAddress missing for enabled camera section {section_name}. Skipping.")
+                    continue
+
+                friendly_name = config.get(section_name, 'FriendlyName', fallback=cam_key)
+                username = config.get(section_name, 'Username', fallback=default_username)
+                password = config.get(section_name, 'Password', fallback=default_password)
+                port = config.getint(section_name, 'Port', fallback=default_port) # Ensure port is int
+                channel = config.getint(section_name, 'Channel', fallback=0) # Default channel 0
+
+                loaded_cameras_temp.append({
+                    "key": cam_key, # Store the original key for reference if needed
+                    "ip": ip_address,
+                    "port": port,
+                    "username": username,
+                    "password": password,
+                    "channel": channel,
+                    "friendly_name": friendly_name,
+                    "login_id": 0,  # Initialize for SDK use
+                    "attach_id": 0 # Initialize for SDK use
+                })
+                print(f"Loaded enabled camera: {friendly_name} ({ip_address})")
+            else:
+                print(f"Skipping disabled camera section: {section_name}")
+
+    CONFIGURED_CAMERAS = loaded_cameras_temp
+    if not CONFIGURED_CAMERAS:
+        print("Warning: No enabled cameras found in configuration. Listener will not connect to any cameras.")
+
 
 
 # --- FUNCIÓN CALLBACK PARA PROCESAR EVENTOS ---
@@ -201,34 +230,40 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
 # --- FUNCIÓN PRINCIPAL ---
 
 def main():
+    # First, load configurations
+    load_and_prepare_config()
+
+    if not CONFIGURED_CAMERAS:
+        print("No enabled cameras configured. Exiting listener.")
+        return
+
     print("Initializing SDK...")
     sdk = NetClient()
     
-    # Setup SDK logging to use the configured LOG_DIR
+    # Setup SDK logging to use the configured LOG_DIR (paths are now global via load_and_prepare_config)
     log_info = LOG_SET_PRINT_INFO()
     log_info.dwSize = sizeof(LOG_SET_PRINT_INFO)
     log_info.bSetFilePath = 1
-    # log_path = os.path.join(os.getcwd(), SDK_DEBUG_LOG_FILE).encode('gbk') # Original was relative
-    log_path_sdk = SDK_DEBUG_LOG_FILE.encode('gbk') # Use absolute path from config
+    log_path_sdk = SDK_DEBUG_LOG_FILE.encode('gbk')
     log_info.szLogFilePath = log_path_sdk
 
-    # Ensure the directory for the SDK log exists (os.makedirs was called for LOG_DIR already)
-    # os.makedirs(os.path.dirname(SDK_DEBUG_LOG_FILE), exist_ok=True) # Already done for LOG_DIR
 
     sdk.LogOpen(log_info)
     print(f"SDK logging enabled. Log file: {SDK_DEBUG_LOG_FILE}")
 
     sdk.InitEx(None)
     
-    print("Connecting to cameras and subscribing to traffic events...")
+    print(f"Connecting to {len(CONFIGURED_CAMERAS)} configured camera(s) and subscribing to traffic events...")
 
-    for cam in CAMERAS:
+    for cam_config in CONFIGURED_CAMERAS: # Iterate over the dynamically loaded cameras
         stuInParam = NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY()
         stuInParam.dwSize = sizeof(NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY)
-        stuInParam.szIP = cam["ip"].encode()
-        stuInParam.nPort = PORT
-        stuInParam.szUserName = USER_NAME
-        stuInParam.szPassword = PASSWORD
+
+        # Use values from cam_config
+        stuInParam.szIP = cam_config["ip"].encode('utf-8') # Ensure encoding
+        stuInParam.nPort = cam_config["port"]
+        stuInParam.szUserName = cam_config["username"].encode('utf-8')
+        stuInParam.szPassword = cam_config["password"].encode('utf-8')
         stuInParam.emSpecCap = EM_LOGIN_SPAC_CAP_TYPE.TCP
         
         stuOutParam = NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY()
@@ -237,39 +272,49 @@ def main():
         login_id, _, error_msg = sdk.LoginWithHighLevelSecurity(stuInParam, stuOutParam)
         
         if login_id != 0:
-            cam["login_id"] = login_id
-            print(f"  - Login SUCCESS: {cam['ip']}")
+            cam_config["login_id"] = login_id # Store login_id in the cam_config dict
+            print(f"  - Login SUCCESS: {cam_config['friendly_name']} ({cam_config['ip']})")
             
-            channel = 0
-            bNeedPicFile = 1 # <--- CAMBIO CLAVE: 1 para solicitar la imagen
+            channel = cam_config.get("channel", 0) # Use configured channel, default to 0
+            bNeedPicFile = 1
             
+            # Pass camera_ip or a unique camera identifier as part of dwUser if needed in callback
+            # For now, g_attach_handle_map uses attach_id which is fine.
             attach_id = sdk.RealLoadPictureEx(login_id, channel, EM_EVENT_IVS_TYPE.TRAFFICJUNCTION, bNeedPicFile, analyzer_data_callback, 0, None)
             
             if attach_id != 0:
-                cam["attach_id"] = attach_id
-                g_attach_handle_map[attach_id] = cam["ip"]
-                print(f"  - Subscription SUCCESS: {cam['ip']}")
+                cam_config["attach_id"] = attach_id # Store attach_id
+                # Use a more robust identifier for the map if friendly_name can be non-unique. IP is safer.
+                g_attach_handle_map[attach_id] = cam_config["ip"]
+                print(f"  - Subscription SUCCESS: {cam_config['friendly_name']} ({cam_config['ip']})")
             else:
-                print(f"  - Subscription FAILED: {cam['ip']} - Error: {sdk.GetLastError()}")
+                print(f"  - Subscription FAILED: {cam_config['friendly_name']} ({cam_config['ip']}) - Error: {sdk.GetLastError()}")
                 sdk.Logout(login_id)
-                cam["login_id"] = 0
+                cam_config["login_id"] = 0 # Reset login_id on failure
         else:
-            print(f"  - Login FAILED: {cam['ip']} - {error_msg}")
+            print(f"  - Login FAILED: {cam_config['friendly_name']} ({cam_config['ip']}) - {error_msg}")
 
-    print("\n--- System is running. Waiting for license plate events. Press Ctrl+C to exit. ---")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n--- Shutting down ---")
+    if any(c.get("attach_id") for c in CONFIGURED_CAMERAS):
+        print(f"\n--- System is running. Monitoring {sum(1 for c in CONFIGURED_CAMERAS if c.get('attach_id'))} camera(s). Press Ctrl+C to exit. ---")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n--- Shutting down ---")
+    else:
+        print("\n--- No cameras successfully subscribed. Listener will exit. ---")
+        # No need to loop if no cameras are active
+
+    # Cleanup logic remains largely the same, but iterates CONFIGURED_CAMERAS
     finally:
-        for cam in CAMERAS:
-            if cam["attach_id"] != 0:
-                sdk.StopLoadPic(cam["attach_id"])
-                print(f"  - Unsubscribed from {cam['ip']}")
-            if cam["login_id"] != 0:
-                sdk.Logout(cam["login_id"])
-                print(f"  - Logged out from {cam['ip']}")
+        print("--- Cleaning up SDK resources ---")
+        for cam_config in CONFIGURED_CAMERAS: # Iterate over the dynamically loaded cameras
+            if cam_config.get("attach_id", 0) != 0:
+                sdk.StopLoadPic(cam_config["attach_id"])
+                print(f"  - Unsubscribed from {cam_config['friendly_name']} ({cam_config['ip']})")
+            if cam_config.get("login_id", 0) != 0:
+                sdk.Logout(cam_config["login_id"])
+                print(f"  - Logged out from {cam_config['friendly_name']} ({cam_config['ip']})")
         sdk.Cleanup()
         print("SDK cleaned up. Exiting.")
 

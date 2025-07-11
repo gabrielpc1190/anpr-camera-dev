@@ -105,3 +105,4 @@ if __name__ == '__main__':
 # Final log to indicate the end of the script if reached by Gunicorn import path
 if early_logger:
     early_logger.info("--- MINIMAL anpr_web.py: End of script reached (Gunicorn import path likely) ---")
+
