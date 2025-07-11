@@ -34,7 +34,7 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
     Esta función se ejecuta cada vez que la cámara envía un evento de tráfico.
     """
     if dwAlarmType == EM_EVENT_IVS_TYPE.TRAFFICJUNCTION:
-        
+
         alarm_info = cast(pAlarmInfo, POINTER(DEV_EVENT_TRAFFICJUNCTION_INFO)).contents
 
         # --- Bloque 1: Logging de campos clave del paquete ---
@@ -51,7 +51,7 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
                 "vehicle_speed": alarm_info.stTrafficCar.nSpeed,
                 "lane": alarm_info.stTrafficCar.nLane
             }
-            
+
             with open(PACKET_LOG_FILE, "a") as f:
                 f.write(json.dumps(packet_details, indent=4) + "\n---\n")
 
@@ -63,10 +63,10 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
             if pBuffer and dwBufSize > 0:
                 plate_number = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
                 camera_ip = g_attach_handle_map.get(lAnalyzerHandle, "UnknownIP")
-                
+
                 utc = alarm_info.UTC
                 event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
-                
+
                 # Crear un nombre de archivo único
                 time_str = event_time.strftime("%Y%m%d_%H%M%S")
                 filename = f"{time_str}_{camera_ip.replace('.', '-')}_{plate_number}.jpg"
@@ -75,7 +75,7 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
                 # Guardar el búfer de la imagen en el archivo
                 with open(filepath, "wb") as f:
                     f.write(pBuffer[:dwBufSize])
-                
+
                 print(f"  -> Image saved to {filepath}")
 
         except Exception as e:
@@ -85,14 +85,14 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
         try:
             plate_number = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312').strip()
             camera_ip = g_attach_handle_map.get(lAnalyzerHandle, "Unknown IP")
-            
+
             utc = alarm_info.UTC
             event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
             time_str = event_time.strftime("%Y-%m-%d %H:%M:%S")
 
             log_message = f"[{time_str}] [{camera_ip}] Plate Detected: {plate_number}"
             print(log_message)
-            
+
             with open(LOG_FILE, "a") as f:
                 f.write(log_message + "\n")
 

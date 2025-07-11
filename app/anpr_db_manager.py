@@ -136,7 +136,7 @@ def save_image(image_buffer, camera_id, timestamp_utc, plate_number):
     if image_buffer and len(image_buffer) > 0:
         image_uuid = uuid.uuid4()
         ts_for_fn = f"{timestamp_utc.dwYear:04d}{timestamp_utc.dwMonth:02d}{timestamp_utc.dwDay:02d}_{timestamp_utc.dwHour:02d}{timestamp_utc.dwMinute:02d}{timestamp_utc.dwSecond:02d}"
-        
+
         # Sanitize plate number for filename
         sanitized_plate = sanitize_filename(plate_number)
         
