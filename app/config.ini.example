@@ -1,5 +1,7 @@
 [General]
-LogFile = /app/logs/anpr_events.log
+# LogFile setting is no longer used here.
+# Each service (listener, db_manager, web) defaults to its own log file
+# (e.g., anpr_listener.log) within the /app/logs/ directory volume.
 
 [Paths]
 ImageDirectory = /app/anpr_images
