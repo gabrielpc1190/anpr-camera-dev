@@ -54,6 +54,7 @@ try:
 
     early_logger.info('--- MINIMAL anpr_web.py script finished initial setup (early log) ---')
 
+
 except Exception as e:
     # Log to file if early_logger was successfully initialized
     if early_logger and early_logger.hasHandlers():
