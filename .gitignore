@@ -21,6 +21,8 @@ Thumbs.db
 # Application Specific
 app/anpr_images/
 app/logs/
+config.ini
+*.whl
 
 # SDK temporary directory (if created locally and not just in setup.sh)
 .sdk_temp/
