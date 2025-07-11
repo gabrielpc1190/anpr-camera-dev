@@ -14,6 +14,7 @@ APP_DIR="app"
 IMAGE_DIR_HOST="${APP_DIR}/anpr_images" # Path on the host for images
 LOG_DIR_HOST="${APP_DIR}/logs"         # Path on the host for logs
 DB_DATA_VOLUME_NAME="anpr_db_data"     # Named volume for MariaDB data
+DEPS_MARKER_FILE="${LOG_DIR_HOST}/.dependencies_checked" # Marker file for dependency installation
 SDK_TEMP_DIR=".sdk_temp"
 ENV_FILE=".env"
 CONFIG_INI="${APP_DIR}/config.ini"
@@ -43,6 +44,40 @@ usage() {
 
 # Function to install required system dependencies
 install_dependencies() {
+    # Ensure LOG_DIR_HOST exists before trying to use it for the marker file
+    mkdir -p "${LOG_DIR_HOST}"
+
+    if [ -f "${DEPS_MARKER_FILE}" ]; then
+        echo -e "${GREEN}--- System dependencies appear to be already checked/installed. Skipping. ---${NC}"
+        # Still need to export COMPOSE_CMD if not set
+        if [ -z "$COMPOSE_CMD" ]; then
+            if [ "$(id -u)" -ne 0 ]; then
+                SUDO_CMD="sudo"
+            else
+                SUDO_CMD=""
+            fi
+            if [ -f /etc/os-release ]; then
+                . /etc/os-release
+                OS_ID_TEMP=$ID
+                if [[ "$OS_ID_TEMP" == "ubuntu" || "$OS_ID_TEMP" == "debian" ]]; then
+                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                elif [[ "$OS_ID_TEMP" == "centos" || "$OS_ID_TEMP" == "rhel" || "$OS_ID_TEMP" == "fedora" ]]; then
+                    # Check if /usr/local/bin/docker-compose exists, otherwise default to docker-compose
+                    if [ -x "/usr/local/bin/docker-compose" ]; then
+                        export COMPOSE_CMD="$SUDO_CMD /usr/local/bin/docker-compose"
+                    else
+                        export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                    fi
+                else # Fallback for unknown OS if marker file was somehow created
+                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                fi
+            else # Fallback if /etc/os-release is not found
+                 export COMPOSE_CMD="$SUDO_CMD docker-compose"
+            fi
+        fi
+        return
+    fi
+
     echo "--- Checking and installing required system dependencies... ---"
     
     # Determine sudo command
@@ -98,6 +133,10 @@ install_dependencies() {
     $SUDO_CMD systemctl enable docker
 
     echo -e "${GREEN}--- All dependencies are installed and configured. ---${NC}"
+
+    # Create the marker file after successful installation
+    echo "Creating dependency marker file: ${DEPS_MARKER_FILE}"
+    touch "${DEPS_MARKER_FILE}"
 }
 
 # Function to update the system: pull git changes, rebuild and restart services

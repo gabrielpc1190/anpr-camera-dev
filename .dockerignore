@@ -1,0 +1,47 @@
+# Git specific
+.git/
+.gitignore
+
+# Docker specific (sometimes Dockerfile itself is ignored if not in root of context)
+# Dockerfile # Not ignoring this as it's at the root of the build context.
+
+# Python specific
+__pycache__/
+*.py[co]
+*.egg-info/
+.env
+.venv/
+env/
+venv/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Application Specific
+# Logs and captured images are runtime data, not part of the build
+app/logs/
+app/anpr_images/
+
+# SDK temporary directory and downloaded zip
+.sdk_temp/
+dahua_sdk.zip
+
+# Host setup script (not needed in image)
+setup.sh
+
+# READMEs and other markdown docs (optional, but saves image space)
+*.md
+# If GEMINI.md is useful within the image for some reason, comment the line above or make it more specific.
+# For now, assuming it's documentation not needed at runtime.
+
+# Example files that are not needed in the final image
+.env.example
+app/config.ini.example
+# app/run_listener.sh # This might be useful if it were an entrypoint, but current setup uses direct python/gunicorn calls.
+
+# Test files if any (none in current structure, but good practice)
+# tests/
+# *.test.py
+# pytest.ini
+# .coveragerc
