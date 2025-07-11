@@ -24,7 +24,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code into the container
 # This assumes the .whl file is already in the 'app' directory on the host
-COPY ./app/ /app/ # Explicitly copy to /app/ to be clear, WORKDIR is /app
+COPY ./app/ /app/ 
+# Explicitly copy to /app/ to be clear, WORKDIR is /app
 
 # Install the Dahua SDK and move its libraries
 # The .whl file (with its original name) is expected to be in /app (the WORKDIR)
