@@ -85,6 +85,7 @@ def load_and_prepare_config():
         print("Warning: No enabled cameras found in configuration. Listener will not connect to any cameras.")
 
 
+
 # --- FUNCIÓN CALLBACK PARA PROCESAR EVENTOS ---
 
 @CB_FUNCTYPE(None, C_LLONG, C_DWORD, c_void_p, POINTER(c_ubyte), C_DWORD, C_LDWORD, c_int, c_void_p)
@@ -245,6 +246,7 @@ def main():
     log_info.bSetFilePath = 1
     log_path_sdk = SDK_DEBUG_LOG_FILE.encode('gbk')
     log_info.szLogFilePath = log_path_sdk
+
 
     sdk.LogOpen(log_info)
     print(f"SDK logging enabled. Log file: {SDK_DEBUG_LOG_FILE}")
