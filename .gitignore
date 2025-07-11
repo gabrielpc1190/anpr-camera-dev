@@ -19,11 +19,8 @@ venv/
 Thumbs.db
 
 # Application Specific
-app/logs/.dependencies_checked
-# If anpr_images or logs directories on host should not be committed (they are volume mounts)
-# app/anpr_images/
-# app/logs/
-# (Uncomment above if you don't want to commit example images/logs, but often these dirs are empty in repo)
+app/anpr_images/
+app/logs/
 
 # SDK temporary directory (if created locally and not just in setup.sh)
 .sdk_temp/
