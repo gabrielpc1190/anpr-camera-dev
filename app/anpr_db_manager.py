@@ -125,6 +125,7 @@ def ensure_anpr_events_table():
     except mysql.connector.Error as err_table:
         logger.error(f"Failed to create/ensure anpr_events table: {err_table}", exc_info=True)
 
+
 def get_db_connection():
     """Gets a new DB connection or pings existing one. Reconnects if necessary."""
     global DB_CONNECTION
@@ -191,6 +192,8 @@ def insert_anpr_event_db(event_data):
         logger.error(f"Generic error during event insertion: {e_gen}. Data: {event_data}", exc_info=True)
         if conn and conn.is_connected(): conn.rollback()
         return False
+
+
 def save_image_from_request(image_file, event_data):
     """Saves the image from the request and returns the filename, or None."""
     if not image_file:

@@ -162,7 +162,11 @@ update_system() {
         exit 1
     fi
 
-    # 2. Rebuild docker images
+    # 2. Ensure SDK is present before rebuilding
+    echo "Ensuring Dahua NetSDK .whl file is available for build..."
+    handle_sdk # Ensure the .whl file is in ./app/
+
+    # 3. Rebuild docker images
     echo "Rebuilding Docker images if necessary..."
     if $COMPOSE_CMD build; then
         echo -e "${GREEN}Docker images rebuilt successfully.${NC}"
