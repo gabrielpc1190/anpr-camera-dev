@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 APP_DIR="app"
 IMAGE_DIR_HOST="${APP_DIR}/anpr_images" # Path on the host for images
 LOG_DIR_HOST="${APP_DIR}/logs"         # Path on the host for logs
-DB_DATA_VOLUME_NAME="anpr_db_data"     # Named volume for MariaDB data
+DB_DIR_HOST="${APP_DIR}/db"            # Path on the host for MariaDB data (bind mount)
 DEPS_MARKER_FILE="${LOG_DIR_HOST}/.dependencies_checked" # Marker file for dependency installation
 SDK_TEMP_DIR=".sdk_temp"
 ENV_FILE=".env"
@@ -318,6 +318,16 @@ case $COMMAND in
         mkdir -p "${IMAGE_DIR_HOST}"
         # Ensure LOG_DIR_HOST again just in case install_dependencies was skipped due to marker
         mkdir -p "${LOG_DIR_HOST}"
+
+        # Check and create DB_DIR_HOST
+        if [ ! -d "${DB_DIR_HOST}" ]; then
+            echo -e "${YELLOW}Database directory (${DB_DIR_HOST}) not found. Creating it...${NC}"
+            mkdir -p "${DB_DIR_HOST}"
+            echo -e "${GREEN}Database directory ${DB_DIR_HOST} created successfully.${NC}"
+        else
+            echo -e "${GREEN}Using existing database directory: ${DB_DIR_HOST}.${NC}"
+        fi
+
         echo "--- Building and starting services... ---"
         $COMPOSE_CMD up --build -d
         echo -e "${GREEN}--- Services started successfully. ---${NC}"
@@ -350,23 +360,23 @@ case $COMMAND in
 
         if [ "$FORCE_CLEAN" = true ]; then
             echo -e "${YELLOW}--- Force cleaning environment... ---${NC}"
-            echo "Stopping and removing containers, and the MariaDB named volume (${DB_DATA_VOLUME_NAME})..."
-            $COMPOSE_CMD down -v # Removes containers and anonymous volumes
-            docker volume rm "${DB_DATA_VOLUME_NAME}" 2>/dev/null || echo -e "${YELLOW}Volume ${DB_DATA_VOLUME_NAME} not found or already removed.${NC}"
+            echo "Stopping and removing containers..."
+            $COMPOSE_CMD down -v # Removes containers and anonymous volumes (though we don't have anonymous for DB anymore)
 
-            echo "Deleting data from host-mounted log and image directories (${IMAGE_DIR_HOST}, ${LOG_DIR_HOST})..."
+            echo "Deleting data from host-mounted directories (${IMAGE_DIR_HOST}, ${LOG_DIR_HOST}, ${DB_DIR_HOST})..."
             rm -rf "${IMAGE_DIR_HOST}/"*
             rm -rf "${LOG_DIR_HOST}/"* # This will also remove the .dependencies_checked marker
+            rm -rf "${DB_DIR_HOST}/"*
             # Recreate dirs after cleaning
-            mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}"
-            echo -e "${GREEN}--- All services, containers, MariaDB named volume, and host image/log data have been removed. ---${NC}"
+            mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}" "${DB_DIR_HOST}"
+            echo -e "${GREEN}--- All services, containers, and host-mounted data (images, logs, database) have been cleared. ---${NC}"
             echo -e "${YELLOW}Note: The .dependencies_checked marker has been removed; system dependencies will be re-checked on next relevant command.${NC}"
         else
             echo -e "${RED}WARNING: This will stop all services and remove containers.${NC}"
-            echo -e "${RED}You will also be asked if you want to permanently delete:${NC}"
+            echo -e "${RED}You will also be asked if you want to permanently delete data from:${NC}"
             echo -e "${RED}  - Captured images in ${IMAGE_DIR_HOST}"
             echo -e "${RED}  - Log files in ${LOG_DIR_HOST} (including the .dependencies_checked marker)"
-            echo -e "${RED}  - The MariaDB database volume ('${DB_DATA_VOLUME_NAME}')"
+            echo -e "${RED}  - The MariaDB database files in ${DB_DIR_HOST}"
             read -p "Are you sure you want to stop services and remove containers? (y/N) " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -374,24 +384,19 @@ case $COMMAND in
                 $COMPOSE_CMD down -v # -v also removes anonymous volumes
                 echo -e "${GREEN}--- Services stopped and containers removed. ---${NC}"
 
-                read -p "Do you also want to delete all data in ${IMAGE_DIR_HOST}, ${LOG_DIR_HOST}, and the MariaDB volume (${DB_DATA_VOLUME_NAME})? This is IRREVERSIBLE. (y/N) " -n 1 -r
+                read -p "Do you also want to delete all data in ${IMAGE_DIR_HOST}, ${LOG_DIR_HOST}, and ${DB_DIR_HOST}? This is IRREVERSIBLE. (y/N) " -n 1 -r
                 echo
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    echo "Deleting ${IMAGE_DIR_HOST}/*, ${LOG_DIR_HOST}/*..."
+                    echo "Deleting contents of ${IMAGE_DIR_HOST}, ${LOG_DIR_HOST}, ${DB_DIR_HOST}..."
                     rm -rf "${IMAGE_DIR_HOST}/"*
                     rm -rf "${LOG_DIR_HOST}/"* # This removes the .dependencies_checked marker too
-                    mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}" # Recreate dirs
+                    rm -rf "${DB_DIR_HOST}/"*
+                    mkdir -p "${IMAGE_DIR_HOST}" "${LOG_DIR_HOST}" "${DB_DIR_HOST}" # Recreate dirs
 
-                    echo "Attempting to remove MariaDB volume: ${DB_DATA_VOLUME_NAME}..."
-                    if docker volume rm "${DB_DATA_VOLUME_NAME}" 2>/dev/null; then
-                        echo -e "${GREEN}MariaDB volume '${DB_DATA_VOLUME_NAME}' removed successfully.${NC}"
-                    else
-                        echo -e "${YELLOW}MariaDB volume '${DB_DATA_VOLUME_NAME}' not found or could not be removed (it might not exist if services never ran or were already cleaned).${NC}"
-                    fi
                     echo -e "${GREEN}--- All specified application data has been removed. ---${NC}"
                     echo -e "${YELLOW}Note: The .dependencies_checked marker has been removed; system dependencies will be re-checked on next relevant command.${NC}"
                 else
-                    echo -e "${YELLOW}--- Application data (images, logs, DB volume) remains. ---${NC}"
+                    echo -e "${YELLOW}--- Application data (images, logs, DB files) remains. ---${NC}"
                 fi
             else
                 echo "--- Clean operation cancelled. ---"
