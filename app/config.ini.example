@@ -1,4 +1,10 @@
 [General]
+# LogLevel: Set the global logging verbosity for all services.
+# 3 = DEBUG (most verbose, for development)
+# 2 = INFO (default, standard operational messages)
+# 1 = WARNING (only warnings and errors)
+# 0 = ERROR (only critical errors)
+LogLevel = 2
 # LogDirectory is used by services to determine where to place their specific log files.
 # Example: /app/logs/anpr_listener.log, /app/logs/anpr_db_manager.log, etc.
 LogDirectory = /app/logs

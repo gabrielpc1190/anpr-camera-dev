@@ -1,0 +1,33 @@
+# docker-compose.test.yml
+# VERSIÓN MÍNIMA DE DIAGNÓSTICO
+
+version: '3.8'
+
+services:
+  anpr-db-manager:
+    build:
+      context: .
+      dockerfile: anpr_db_manager.Dockerfile
+    container_name: anpr-db-manager
+    env_file: .env
+    environment:
+      - FLASK_RUN_PORT=5001
+      - FLASK_DEBUG=1
+    volumes:
+      - ./app/config.ini:/app/config.ini:ro
+      - ./app/logs:/app/logs
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  mariadb:
+    image: mariadb:10.6
+    container_name: anpr-mariadb
+    env_file: .env
+    volumes:
+      - ./app/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

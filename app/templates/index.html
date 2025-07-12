@@ -7,32 +7,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Custom scrollbar for webkit browsers */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        /* Add a subtle animation for table rows appearing */
-        .event-row {
-            opacity: 0;
-            animation: fadeIn 0.5s forwards;
-        }
-        @keyframes fadeIn {
-            to {
-                opacity: 1;
-            }
-        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        body { font-family: 'Inter', sans-serif; }
+        .event-row { opacity: 0; animation: fadeIn 0.5s forwards; }
+        @keyframes fadeIn { to { opacity: 1; } }
     </style>
     <link rel="preconnect" href="https://rsms.me/">
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
@@ -45,21 +26,17 @@
 
         <div class="mb-6 p-6 bg-white rounded-lg shadow-md">
             <form id="filterForm" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                <input type="text" id="plate" name="plate" placeholder="Plate Number" class="p-2 border rounded">
+                <input type="text" id="plate_number" name="plate_number" placeholder="Plate Number" class="p-2 border rounded">
                 <select id="camera_id" name="camera_id" class="p-2 border rounded">
                     <option value="">All Cameras</option>
-                    <!-- Camera IDs will be populated here -->
                 </select>
-                <input type="text" name="vehicle_type" placeholder="Vehicle Type" class="p-2 border rounded">
-                <input type="text" name="vehicle_color" placeholder="Vehicle Color" class="p-2 border rounded">
-                <select name="driving_direction" class="p-2 border rounded">
+                <input type="text" name="vehicle_type" placeholder="Vehicle Type" class="p-2 border rounded" disabled>
+                <input type="text" name="vehicle_color" placeholder="Vehicle Color" class="p-2 border rounded" disabled>
+                <select name="driving_direction" class="p-2 border rounded" disabled>
                     <option value="">All Directions</option>
-                    <option value="Approach">Approach</option>
-                    <option value="Leave">Leave</option>
-                    <option value="Unknown">Unknown</option>
                 </select>
-                <input type="datetime-local" name="start_date" class="p-2 border rounded">
-                <input type="datetime-local" name="end_date" class="p-2 border rounded">
+                <input type="date" name="start_date" class="p-2 border rounded">
+                <input type="date" name="end_date" class="p-2 border rounded">
                 <div class="col-span-full flex justify-end space-x-2">
                     <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">Search</button>
                     <button type="reset" id="resetButton" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg">Reset</button>
@@ -85,20 +62,15 @@
                     </tr>
                 </thead>
                 <tbody id="eventsTableBody" class="bg-white divide-y divide-gray-200">
-                    <!-- Event rows will be inserted here by JavaScript -->
                     <tr><td colspan="7" class="text-center p-4 text-gray-500">Loading events...</td></tr>
                 </tbody>
             </table>
         </div>
 
         <div id="paginationControls" class="mt-6 p-4 bg-white rounded-lg shadow-md flex flex-col sm:flex-row justify-between items-center">
-            <button id="prevButton" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors mb-2 sm:mb-0" disabled>
-                Previous
-            </button>
+            <button id="prevButton" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors mb-2 sm:mb-0" disabled>Previous</button>
             <div id="pageInfo" class="text-sm text-gray-700 mb-2 sm:mb-0">Page 1 of 1</div>
-            <button id="nextButton" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors" disabled>
-                Next
-            </button>
+            <button id="nextButton" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors" disabled>Next</button>
         </div>
     </div>
 
@@ -119,15 +91,18 @@
         const eventsPerPage = 10;
 
         async function checkForNewEvents() {
-            const data = await fetchApiData('/api/events/latest_timestamp');
-            if (data && data.latest_timestamp && data.latest_timestamp > latestTimestamp) {
+            if (!latestTimestamp) return;
+            const data = await fetchApiData(`/api/events/latest_timestamp?since=${latestTimestamp}`);
+            if (data && data.new_events_count > 0) {
+                const count = data.new_events_count;
+                newEventsNotification.textContent = `${count} new event${count > 1 ? 's' : ''} available. Click to refresh.`;
                 newEventsNotification.classList.remove('hidden');
             }
         }
 
         async function fetchApiData(endpoint) {
             try {
-                const response = await fetch(endpoint);
+                const response = await fetch(endpoint, { cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 return await response.json();
             } catch (error) {
@@ -149,7 +124,7 @@
         }
 
         async function fetchEvents(page = 1, filters = new URLSearchParams()) {
-            eventsTableBody.innerHTML = '<tr><td colspan="6" class="text-center p-8 text-gray-500"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>Loading events...</td></tr>';
+            eventsTableBody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-gray-500"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>Loading events...</td></tr>';
             
             const params = new URLSearchParams(filters);
             params.set('page', page);
@@ -161,17 +136,15 @@
                 currentPage = data.current_page;
                 totalPages = data.total_pages;
                 if (data.events.length > 0) {
-                    // Update latest timestamp only when fetching the first page of a new search
-                    if (currentPage === 1) {
-                        latestTimestamp = data.events[0].Timestamp;
+                    if (currentPage === 1 && !filters.has('plate_number') && !filters.has('camera_id') && !filters.has('start_date') && !filters.has('end_date')) {
+                        latestTimestamp = data.events[0].timestamp;
                     }
                 }
                 updateTable(data.events);
                 updatePaginationControls();
             } else {
                 eventsTableBody.innerHTML = '<tr><td colspan="7" class="text-center p-4 text-red-500">Error loading events. Please try again later.</td></tr>';
-                totalPages = 0;
-                currentPage = 1;
+                totalPages = 0; currentPage = 1;
                 updatePaginationControls();
             }
         }
@@ -187,17 +160,18 @@
                 row.classList.add('event-row');
                 row.style.animationDelay = `${index * 0.05}s`;
                 const sanitize = str => str ? String(str).replace(/</g, "&lt;").replace(/>/g, "&gt;") : 'N/A';
-                const imageUrl = event.ImageFilename ? `/images/${event.ImageFilename}` : '#';
+                const imageUrl = event.image_filename ? `/images/${event.image_filename}` : '#';
+                const processedData = event.processed_data || {};
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap">
-                        ${event.ImageFilename ? `<a href="${imageUrl}" target="_blank" title="Click to view full image"><img src="${imageUrl}" alt="Plate ${sanitize(event.PlateNumber)}" class="h-16 w-24 object-cover rounded-md shadow-sm hover:shadow-lg transition-shadow"></a>` : 'No Image'}
+                        ${event.image_filename ? `<a href="${imageUrl}" target="_blank" title="Click to view full image"><img src="${imageUrl}" alt="Plate ${sanitize(event.plate_number)}" class="h-16 w-24 object-cover rounded-md shadow-sm hover:shadow-lg transition-shadow"></a>` : 'No Image'}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.Timestamp)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${sanitize(event.PlateNumber)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.VehicleType)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.VehicleColor)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.DrivingDirection)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.CameraID)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.timestamp)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${sanitize(event.plate_number)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(processedData.VehicleType)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(processedData.VehicleColor)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(processedData.DrivingDirection)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.camera_id)}</td>
                 `;
                 eventsTableBody.appendChild(row);
             });
@@ -221,12 +195,14 @@
         document.addEventListener('DOMContentLoaded', () => {
             populateCameraFilter();
             fetchEvents(currentPage, currentFilters);
-            setInterval(checkForNewEvents, 15000); // Check for new events every 15 seconds
+            setInterval(checkForNewEvents, 15000);
         });
 
         newEventsNotification.addEventListener('click', () => {
             newEventsNotification.classList.add('hidden');
-            currentPage = 1; // Go to the first page to see the new events
+            currentPage = 1;
+            currentFilters = new URLSearchParams();
+            filterForm.reset();
             fetchEvents(currentPage, currentFilters);
         });
 
@@ -235,11 +211,7 @@
             const formData = new FormData(filterForm);
             currentFilters = new URLSearchParams();
             for (let [key, value] of formData.entries()) {
-                if (value) { // Only add non-empty filters
-                    // Format datetime-local values to be SQL-friendly
-                    if ((key === 'start_date' || key === 'end_date') && value.includes('T')) {
-                        value = value.replace('T', ' ') + ':00';
-                    }
+                if (value) {
                     currentFilters.set(key, value);
                 }
             }

@@ -1,42 +1,41 @@
 # docker-compose.yml
-# This file orchestrates the ANPR listener, DB manager, web UI, MariaDB, and Cloudflare tunnel.
+# Versión final para producción: Orquesta todos los servicios del proyecto.
+
 version: '3.8'
 
 services:
+  # 1. ANPR Listener: Captures events from cameras
   anpr-listener:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: anpr_listener_service
+      dockerfile: anpr_listener.Dockerfile
+    container_name: anpr-listener
+    restart: always
     env_file: .env
     environment:
       - DB_MANAGER_URL=http://anpr-db-manager:5001/event
-      # Add any other specific environment variables for the listener if needed
-    restart: always
-    # WORKDIR /app is set in Dockerfile
-    command: python anpr_listener.py
     volumes:
       - ./app/config.ini:/app/config.ini:ro
       - ./app/logs:/app/logs
-      - ./app/anpr_images:/app/anpr_images # Mount for saving images
     depends_on:
-      - anpr-db-manager # Listener needs DB manager to be available to send events
+      - anpr-db-manager
+    command: python anpr_listener.py
 
+
+  # 2. ANPR DB Manager: The single source of truth for data
   anpr-db-manager:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: anpr_db_manager_service
+      dockerfile: anpr_db_manager.Dockerfile
+    container_name: anpr-db-manager
+    restart: always
     env_file: .env
     environment:
       - FLASK_RUN_PORT=5001
-      # MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE, DB_HOST are in .env
-    restart: always
-    # WORKDIR /app is set in Dockerfile
-    command: gunicorn --bind 0.0.0.0:5001 --workers 2 --timeout 120 anpr_db_manager:app
+      - FLASK_DEBUG=0 # Desactivar debug para producción
     volumes:
       - ./app/config.ini:/app/config.ini:ro
-      - ./app/anpr_images:/app/anpr_images # For saving received images
+      - ./app/anpr_images:/app/anpr_images
       - ./app/logs:/app/logs
     depends_on:
       mariadb:
@@ -46,63 +45,49 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s # Give time for Flask app and DB connection to initialize
+      start_period: 30s
 
-  anpr-web-ui:
+  # 3. ANPR Web: Frontend proxy and UI server
+  anpr-web:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: anpr_web_ui_service
+      dockerfile: anpr_web.Dockerfile
+    container_name: anpr-web
+    restart: always
     env_file: .env
     environment:
       - FLASK_RUN_PORT=5000
-      # MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE, DB_HOST are in .env
-    restart: always
-    # WORKDIR /app is set in Dockerfile
-    command: gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 anpr_web:app
+      - DB_MANAGER_API_URL=http://anpr-db-manager:5001
     ports:
-      - "5000:5000" # Expose port 5000 for Cloudflared and local access
+      - "5000:5000"
     volumes:
       - ./app/config.ini:/app/config.ini:ro
-      - ./app/anpr_images:/app/anpr_images:ro # Read-only access to images
+      - ./app/anpr_images:/app/anpr_images:ro
       - ./app/logs:/app/logs
-      # ./app/templates is part of the image, no need to mount unless actively developing templates
     depends_on:
-      mariadb:
+      anpr-db-manager:
         condition: service_healthy
-      anpr-db-manager: # Add dependency on anpr-db-manager
-        condition: service_healthy # Wait for anpr-db-manager to be healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
-      interval: 20s
-      timeout: 10s
-      retries: 5
-      start_period: 45s # Allow more time for this service, as it depends on db-manager
+    command: gunicorn --bind 0.0.0.0:5000 --workers 4 anpr_web:app
 
-  cloudflared-tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: anpr_tunnel_service # Renamed for consistency
-    restart: always
-    # Token should be in .env file, which is loaded by cloudflared if command is just 'tunnel run'
-    # Or explicitly pass: tunnel --no-autoupdate run --token ${CLOUDFLARE_TOKEN}
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TOKEN}
-    depends_on:
-      - anpr-web-ui # Tunnel should start after the web UI is available
-
+  # 4. MariaDB: The database service
   mariadb:
     image: mariadb:10.6
-    container_name: anpr_mariadb_service # Renamed for consistency
+    container_name: anpr-mariadb
     restart: always
-    env_file: .env # MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD
+    env_file: .env
     volumes:
-      - ./app/db:/var/lib/mysql # Use bind mount for DB data persistence in ./app/db
+      - ./app/db:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-# Named volume anpr_db_data is no longer used for MariaDB, can be removed if not used by other services.
-# For now, let's comment it out or remove it if confirmed it's not needed elsewhere.
-# volumes:
-#   anpr_db_data: # Define the named volume for MariaDB
+  # 5. Cloudflared: Exposes the web UI to the internet
+  cloudflared-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: anpr-tunnel
+    restart: always
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TOKEN}
+    depends_on:
+      - anpr-web
