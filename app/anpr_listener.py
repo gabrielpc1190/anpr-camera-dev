@@ -90,13 +90,11 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
             event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
             
             direction_map = {0: "Unknown", 1: "Approaching", 2: "Leaving"}
-            driving_direction_code = getattr(alarm_info.stTrafficCar, 'nDirection', 0)
+            driving_direction_code = getattr(alarm_info, 'emCaptureDirection', 0)
             driving_direction = direction_map.get(driving_direction_code, "Unknown")
             
             log_message = f"[{event_time.strftime('%Y-%m-%d %H:%M:%S')}] [{camera_ip}] Plate Detected: {plate_number} | Direction: {driving_direction}"
             logger.info(log_message)
-
-            
             
             camera_friendly_name = g_ip_to_friendly_name_map.get(camera_ip, camera_ip)
 
@@ -164,15 +162,6 @@ def main():
     logger.setLevel(log_level)
     for handler in [file_handler, console_handler]:
         logger.addHandler(handler)
-
-    # Raw data logger setup
-    raw_data_logger = logging.getLogger('raw_data')
-    raw_data_logger.setLevel(logging.DEBUG)
-    raw_data_file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'anpr_listener_raw_data.log'))
-    raw_data_file_handler.setFormatter(log_formatter)
-    raw_data_logger.addHandler(raw_data_file_handler)
-
-    
 
     logger.info("--- anpr_listener: Starting main function ---")
     

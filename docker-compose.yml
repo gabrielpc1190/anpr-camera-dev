@@ -46,7 +46,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    command: python anpr_db_manager.py
 
   # 3. ANPR Web: Frontend proxy and UI server
   anpr-web:
@@ -89,6 +88,6 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: anpr-tunnel
     restart: always
-    command: tunnel --no-autoupdate --loglevel warn run --token ${CLOUDFLARE_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TOKEN}
     depends_on:
       - anpr-web

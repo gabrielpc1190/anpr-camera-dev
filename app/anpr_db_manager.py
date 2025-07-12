@@ -80,8 +80,7 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS anpr_events (
                 id INT AUTO_INCREMENT PRIMARY KEY, plate_number VARCHAR(255) NOT NULL,
                 camera_id VARCHAR(255), timestamp DATETIME NOT NULL, image_filename VARCHAR(255),
-                confidence FLOAT, processed_data JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                driving_direction VARCHAR(50)
+                confidence FLOAT, processed_data JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         conn.commit()
@@ -164,12 +163,11 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
         except ValueError:
             logger.error(f"Invalid timestamp format: {timestamp_str}")
             return False
-        driving_direction = event_data.get("DrivingDirection", None)
         sql = """
-            INSERT INTO anpr_events (plate_number, camera_id, timestamp, image_filename, confidence, processed_data, driving_direction)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO anpr_events (plate_number, camera_id, timestamp, image_filename, confidence, processed_data)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
-        val = (plate_number, camera_id, timestamp_obj, image_filename, confidence, json.dumps(event_data), driving_direction)
+        val = (plate_number, camera_id, timestamp_obj, image_filename, confidence, json.dumps(event_data))
         cursor.execute(sql, val)
         last_id = cursor.lastrowid
         db_conn.commit()
@@ -210,7 +208,7 @@ def get_events():
     if where_clauses:
         base_query += " WHERE " + " AND ".join(where_clauses)
     count_query = "SELECT COUNT(*) " + base_query
-    sql_query = f"SELECT id, plate_number, camera_id, timestamp, image_filename, confidence, processed_data, driving_direction {base_query}"
+    sql_query = f"SELECT id, plate_number, camera_id, timestamp, image_filename, confidence, processed_data {base_query}"
     try:
         count_cursor = conn.cursor()
         count_cursor.execute(count_query, query_params)
@@ -309,46 +307,7 @@ def health_check():
     finally:
         if conn and conn.is_connected(): conn.close()
 
-import gunicorn.app.base
-
-class StandaloneApplication(gunicorn.app.base.BaseApplication):
-    def __init__(self, app, options=None):
-        self.options = options or {}
-        self.application = app
-        super().__init__()
-
-    def load_config(self):
-        config = {key: value for key, value in self.options.items()
-                  if key in self.cfg.settings and value is not None}
-        for key, value in config.items():
-            self.cfg.set(key.lower(), value)
-
-    def load(self):
-        return self.application
-
 if __name__ == '__main__':
     initialize_database()
     server_port = int(os.getenv('FLASK_RUN_PORT', 5001))
-
-    # Map config.ini LogLevel to Gunicorn log levels
-    gunicorn_log_level_map = {
-        '0': 'error',
-        '1': 'warning',
-        '2': 'info',
-        '3': 'debug'
-    }
-    log_level_str = config.get('General', 'LogLevel', fallback='2')
-    gunicorn_log_level = gunicorn_log_level_map.get(log_level_str, 'info')
-
-    options = {
-        'bind': '%s:%s' % ('0.0.0.0', server_port),
-        'workers': 4,
-        'log-level': gunicorn_log_level,
-        'errorlog': '-',  # Send error logs to stdout
-    }
-
-    if gunicorn_log_level == 'error': # If LogLevel is 0, disable access logs
-        options['disable-access-log'] = True
-    else:
-        options['accesslog'] = '-' # Otherwise, send access logs to stdout
-    StandaloneApplication(app, options).run()
+    app.run(host='0.0.0.0', port=server_port, debug=False)
