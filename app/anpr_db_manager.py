@@ -5,6 +5,11 @@ from flask import Flask, jsonify, request, abort
 from werkzeug.utils import secure_filename
 from math import ceil
 
+class HealthCheckFilter(logging.Filter):
+    def filter(self, record):
+        # Return False to prevent a log message from being emitted
+        return "/health" not in record.getMessage()
+
 # --- Flask App Initialization ---
 app = Flask(__name__)
 
@@ -47,6 +52,11 @@ file_handler = logging.FileHandler(LOG_FILE)
 file_handler.setFormatter(log_formatter)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
+
+health_filter = HealthCheckFilter()
+file_handler.addFilter(health_filter)
+console_handler.addFilter(health_filter)
+
 logger = logging.getLogger(__name__)
 app.logger.handlers = []; app.logger.propagate = False
 for handler in [file_handler, console_handler]:
@@ -75,7 +85,9 @@ def initialize_database():
             host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME
         )
         cursor = conn.cursor()
-        logger.info("Attempting to create anpr_events table if it does not exist...")
+        
+        # Step 1: Ensure the table exists
+        logger.info("Ensuring 'anpr_events' table exists...")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS anpr_events (
                 id INT AUTO_INCREMENT PRIMARY KEY, plate_number VARCHAR(255) NOT NULL,
@@ -83,15 +95,26 @@ def initialize_database():
                 confidence FLOAT, processed_data JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Step 2: Add the vehicle_type column if it doesn't exist
+        logger.info("Ensuring 'vehicle_type' column exists...")
+        cursor.execute("ALTER TABLE anpr_events ADD COLUMN IF NOT EXISTS vehicle_type VARCHAR(50)")
+        
+        # Step 3: Add the access_status column if it doesn't exist
+        logger.info("Ensuring 'access_status' column exists...")
+        cursor.execute("ALTER TABLE anpr_events ADD COLUMN IF NOT EXISTS access_status VARCHAR(50)")
+        
         conn.commit()
-        cursor.close(); conn.close()
         TABLE_INITIALIZED = True
-        logger.info("Database table 'anpr_events' ensured to exist.")
+        logger.info("Database schema is up to date.")
         return True
     except mysql.connector.Error as err:
         logger.error(f"Error initializing database: {err}", exc_info=True)
-        if conn: conn.close()
         return False
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
 def get_db_connection():
     try:
@@ -147,6 +170,8 @@ def receive_event():
     finally:
         if conn and conn.is_connected(): conn.close()
 
+# In anpr_db_manager.py
+
 def insert_anpr_event_db(event_data, image_filename, db_conn):
     cursor = None
     try:
@@ -155,6 +180,9 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
         camera_id = event_data.get("CameraID")
         timestamp_str = event_data.get("EventTimeUTC")
         confidence = event_data.get("Confidence", None)
+        vehicle_type = event_data.get("VehicleType", "Unknown")
+        access_status = event_data.get("AccessStatus", "Unknown") # Get the new data
+        
         if timestamp_str is None:
             logger.error("Timestamp string is None. Cannot convert to datetime.")
             return False
@@ -163,15 +191,19 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
         except ValueError:
             logger.error(f"Invalid timestamp format: {timestamp_str}")
             return False
+
+        # Updated SQL to include both new columns
         sql = """
-            INSERT INTO anpr_events (plate_number, camera_id, timestamp, image_filename, confidence, processed_data)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO anpr_events (plate_number, camera_id, timestamp, image_filename, confidence, processed_data, vehicle_type, access_status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
-        val = (plate_number, camera_id, timestamp_obj, image_filename, confidence, json.dumps(event_data))
+        # Updated values to match the new columns
+        val = (plate_number, camera_id, timestamp_obj, image_filename, confidence, json.dumps(event_data), vehicle_type, access_status)
+        
         cursor.execute(sql, val)
         last_id = cursor.lastrowid
         db_conn.commit()
-        logger.info(f"Event for plate '{plate_number}' inserted successfully. DB Row ID: {last_id}")
+        logger.info(f"Event for plate '{plate_number}' (Type: {vehicle_type}, Status: {access_status}) inserted successfully. DB Row ID: {last_id}")
         return True
     except mysql.connector.Error as err:
         logger.error(f"Error inserting event into database: {err}", exc_info=True)
