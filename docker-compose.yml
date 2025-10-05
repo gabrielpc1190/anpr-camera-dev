@@ -18,7 +18,8 @@ services:
       - ./app/config.ini:/app/config.ini:ro
       - ./app/logs:/app/logs
     depends_on:
-      - anpr-db-manager
+      anpr-db-manager:
+        condition: service_healthy
     command: python anpr_listener.py
 
 
