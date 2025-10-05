@@ -74,42 +74,60 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
         camera_ip = g_attach_handle_map.get(lAnalyzerHandle, "Unknown IP")
         
         image_filepath = None
-        if pBuffer and dwBufSize > 0:
-            try:
-                plate_number = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
+        # This top-level try/except block ensures the entire callback doesn't crash from any error
+        try:
+            # Step 1: Save the image first. Exit if there is no image.
+            if pBuffer and dwBufSize > 0:
+                plate_number_for_file = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
                 utc = alarm_info.UTC
                 event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
                 time_str = event_time.strftime("%Y%m%d_%H%M%S")
-                filename = f"temp_{time_str}_{camera_ip.replace('.', '-')}_{plate_number}.jpg"
+                filename = f"temp_{time_str}_{camera_ip.replace('.', '-')}_{plate_number_for_file}.jpg"
                 image_filepath = os.path.join(IMAGE_SAVE_DIR, filename)
                 with open(image_filepath, "wb") as f:
                     f.write(bytes(pBuffer[:dwBufSize]))
                 logger.info(f"Temp image saved to {image_filepath}")
-            except Exception as e:
-                logger.error(f"ERROR saving image: {e}")
+            else:
+                logger.warning("No image buffer in event. Cannot process.")
                 return
-        else:
-            logger.warning("No image buffer in event. Cannot send to DB manager.")
-            return
 
-        try:
+            # Step 2: Extract all data fields
             plate_number = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
             utc = alarm_info.UTC
             event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
             
-            direction_map = {0: "Unknown", 1: "Approaching", 2: "Leaving"}
-            driving_direction_code = getattr(alarm_info, 'emCaptureDirection', 0)
-            driving_direction = direction_map.get(driving_direction_code, "Unknown")
-            
-            log_message = f"[{event_time.strftime('%Y-%m-%d %H:%M:%S')}] [{camera_ip}] Plate Detected: {plate_number} | Direction: {driving_direction}"
-            logger.info(log_message)
-            
-            camera_friendly_name = g_ip_to_friendly_name_map.get(camera_ip, camera_ip)
+            # Get Access Control Status
+            access_status_map = {0: "Unknown", 1: "Trust Car", 2: "Suspicious Car", 3: "Normal Car"}
+            access_status_code = getattr(alarm_info.stTrafficCar, 'emCarType', 0)
+            access_status = access_status_map.get(access_status_code, "Other")
 
+            # Get Vehicle Direction (Robust Fallback Method)
+            direction_map = {0: "Unknown", 1: "Approaching", 2: "Leaving"}
+            direction_code = getattr(alarm_info, 'emCarDrivingDirection', 0)
+            driving_direction = direction_map.get(direction_code, "Unknown")
+
+            if driving_direction == "Unknown":
+                if hasattr(alarm_info.stTrafficCar, 'szDrivingDirection'):
+                    # This adds .value to fix the error
+                    direction_str = bytes(alarm_info.stTrafficCar.szDrivingDirection).strip(b'\x00').decode('gb2312', 'ignore').strip()
+                    if direction_str:
+                        driving_direction = direction_str
+
+            # Get Physical Vehicle Type
+            vehicle_type = "Unknown"
+            if hasattr(alarm_info, 'stuVehicle') and hasattr(alarm_info.stuVehicle, 'szObjectType'):
+                vehicle_type = alarm_info.stuVehicle.szObjectType.decode('gb2312', 'ignore').strip()
+
+            # Step 3: Log the complete, final message
+            log_message = f"[{event_time.strftime('%Y-%m-%d %H:%M:%S')}] [{camera_ip}] Plate Detected: {plate_number} | Direction: {driving_direction} | Status: {access_status}"
+            logger.info(log_message)
+
+            # Step 4: Prepare and send the complete payload
+            camera_friendly_name = g_ip_to_friendly_name_map.get(camera_ip, camera_ip)
             plate_color = getattr(alarm_info.stTrafficCar, 'szPlateColor', b'').decode('gb2312', 'ignore').strip() or "N/A"
-            confidence = getattr(alarm_info.stTrafficCar, 'nConfidence', 0)
-            plate_type = getattr(alarm_info.stTrafficCar, 'szPlateType', b'').decode('gb2312', 'ignore').strip() or "N/A"
             vehicle_brand = getattr(alarm_info.stTrafficCar, 'szVehicleSign', b'').decode('gb2312', 'ignore').strip() or "N/A"
+            plate_type = getattr(alarm_info.stTrafficCar, 'szPlateType', b'').decode('gb2312', 'ignore').strip() or "N/A"
+            confidence = getattr(alarm_info.stTrafficCar, 'nConfidence', 0)
 
             event_payload = {
                 "Timestamp": event_time.isoformat(),
@@ -117,7 +135,8 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
                 "PlateNumber": plate_number,
                 "EventType": "TrafficJunction",
                 "CameraID": camera_friendly_name,
-                "VehicleType": getattr(alarm_info.stTrafficCar, 'szVehicleType', b'').decode('gb2312', 'ignore').strip(),
+                "VehicleType": vehicle_type,
+                "AccessStatus": access_status,
                 "VehicleColor": getattr(alarm_info.stTrafficCar, 'szVehicleColor', b'').decode('gb2312', 'ignore').strip(),
                 "PlateColor": plate_color,
                 "DrivingDirection": driving_direction,
@@ -131,7 +150,9 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
 
         except Exception as e:
             logger.error(f"Error processing plate data or sending event: {e}", exc_info=True)
-
+            # Clean up the temp image if an error occurs before it can be sent
+            if image_filepath and os.path.exists(image_filepath):
+                os.remove(image_filepath)
 # --- FUNCIÓN PRINCIPAL ---
 def main():
     global logger, sdk, IMAGE_SAVE_DIR, g_ip_to_friendly_name_map
