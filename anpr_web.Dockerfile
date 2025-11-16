@@ -4,22 +4,19 @@ FROM python:3.11-slim-bookworm
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
-ENV PATH="/root/.local/bin:${PATH}"
 
-# Set the working directory
+# Set work directory
 WORKDIR /app
 
-# Copy requirements first to leverage Docker cache
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Copy application files
+COPY ./app /app
 
-# Copy only the necessary files for this service
-COPY app/anpr_web.py .
-COPY app/templates/ /app/templates/
-
-# This service does not need the Dahua SDK or its system dependencies.
-# Expose the web interface port
+# Expose port
 EXPOSE 5000
+
+# Run the application
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "anpr_web:app"]

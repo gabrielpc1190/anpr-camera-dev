@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ANPR Event Viewer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{ url_for('static', filename='tailwind.js') }}"></script>
     <style>
         /* Custom scrollbar for webkit browsers */
         ::-webkit-scrollbar { width: 8px; }
@@ -15,8 +15,7 @@
         .event-row { opacity: 0; animation: fadeIn 0.5s forwards; }
         @keyframes fadeIn { to { opacity: 1; } }
     </style>
-    <link rel="preconnect" href="https://rsms.me/">
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='inter.css') }}">
 </head>
 <body class="bg-gray-100 text-gray-800">
     <div class="container mx-auto p-4">
