@@ -5,6 +5,11 @@ from flask import Flask, jsonify, request, abort
 from werkzeug.utils import secure_filename
 from math import ceil
 
+class HealthCheckFilter(logging.Filter):
+    def filter(self, record):
+        # Return False to prevent a log message from being emitted
+        return "/health" not in record.getMessage()
+
 # --- Flask App Initialization ---
 app = Flask(__name__)
 
@@ -47,6 +52,11 @@ file_handler = logging.FileHandler(LOG_FILE)
 file_handler.setFormatter(log_formatter)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
+
+health_filter = HealthCheckFilter()
+file_handler.addFilter(health_filter)
+console_handler.addFilter(health_filter)
+
 logger = logging.getLogger(__name__)
 app.logger.handlers = []; app.logger.propagate = False
 for handler in [file_handler, console_handler]:
@@ -75,7 +85,8 @@ def initialize_database():
             host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME
         )
         cursor = conn.cursor()
-        logger.info("Attempting to create anpr_events table if it does not exist...")
+        
+        logger.info("Ensuring 'anpr_events' table exists...")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS anpr_events (
                 id INT AUTO_INCREMENT PRIMARY KEY, plate_number VARCHAR(255) NOT NULL,
@@ -83,15 +94,28 @@ def initialize_database():
                 confidence FLOAT, processed_data JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        logger.info("Ensuring 'vehicle_type' column exists...")
+        cursor.execute("ALTER TABLE anpr_events ADD COLUMN IF NOT EXISTS vehicle_type VARCHAR(50)")
+        
+        logger.info("Ensuring 'access_status' column exists...")
+        cursor.execute("ALTER TABLE anpr_events ADD COLUMN IF NOT EXISTS access_status VARCHAR(50)")
+
+        # --- AÑADIR ESTA LÍNEA ---
+        logger.info("Ensuring 'driving_direction' column exists...")
+        cursor.execute("ALTER TABLE anpr_events ADD COLUMN IF NOT EXISTS driving_direction VARCHAR(50)")
+        
         conn.commit()
-        cursor.close(); conn.close()
         TABLE_INITIALIZED = True
-        logger.info("Database table 'anpr_events' ensured to exist.")
+        logger.info("Database schema is up to date.")
         return True
     except mysql.connector.Error as err:
         logger.error(f"Error initializing database: {err}", exc_info=True)
-        if conn: conn.close()
         return False
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
 def get_db_connection():
     try:
@@ -147,6 +171,8 @@ def receive_event():
     finally:
         if conn and conn.is_connected(): conn.close()
 
+# In anpr_db_manager.py
+
 def insert_anpr_event_db(event_data, image_filename, db_conn):
     cursor = None
     try:
@@ -155,6 +181,10 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
         camera_id = event_data.get("CameraID")
         timestamp_str = event_data.get("EventTimeUTC")
         confidence = event_data.get("Confidence", None)
+        vehicle_type = event_data.get("VehicleType", "Unknown")
+        access_status = event_data.get("AccessStatus", "Unknown")
+        driving_direction = event_data.get("DrivingDirection", "Unknown") # <-- Añadir esta línea
+
         if timestamp_str is None:
             logger.error("Timestamp string is None. Cannot convert to datetime.")
             return False
@@ -163,15 +193,17 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
         except ValueError:
             logger.error(f"Invalid timestamp format: {timestamp_str}")
             return False
+
         sql = """
-            INSERT INTO anpr_events (plate_number, camera_id, timestamp, image_filename, confidence, processed_data)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO anpr_events (plate_number, camera_id, timestamp, image_filename, confidence, processed_data, vehicle_type, access_status, driving_direction)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        val = (plate_number, camera_id, timestamp_obj, image_filename, confidence, json.dumps(event_data))
+        val = (plate_number, camera_id, timestamp_obj, image_filename, confidence, json.dumps(event_data), vehicle_type, access_status, driving_direction)
+        
         cursor.execute(sql, val)
         last_id = cursor.lastrowid
         db_conn.commit()
-        logger.info(f"Event for plate '{plate_number}' inserted successfully. DB Row ID: {last_id}")
+        logger.info(f"Event for plate '{plate_number}' (Direction: {driving_direction}) inserted successfully. DB Row ID: {last_id}")
         return True
     except mysql.connector.Error as err:
         logger.error(f"Error inserting event into database: {err}", exc_info=True)
@@ -184,15 +216,27 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
 def get_events():
     conn = get_db_connection()
     if not conn: abort(503, description="Database connection unavailable")
+    
+    # --- Obtener parámetros de la petición ---
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 10, type=int)
     plate_number = request.args.get('plate_number', type=str)
     camera_id = request.args.get('camera_id', type=str)
     start_date_str = request.args.get('start_date', type=str)
     end_date_str = request.args.get('end_date', type=str)
+    
+    # --- NUEVOS PARÁMETROS DE FILTRO ---
+    vehicle_type = request.args.get('vehicle_type', type=str)
+    access_status = request.args.get('access_status', type=str)
+    driving_direction = request.args.get('driving_direction', type=str)
+    
     offset = (page - 1) * limit
+    
+    # --- Construir la consulta SQL dinámicamente ---
     query_params, where_clauses = [], []
     base_query = "FROM anpr_events"
+    
+    # Filtros existentes
     if plate_number:
         where_clauses.append("plate_number LIKE %s")
         query_params.append(f"%{plate_number}%")
@@ -205,16 +249,34 @@ def get_events():
     if end_date_str:
         where_clauses.append("DATE(timestamp) <= %s")
         query_params.append(end_date_str)
+
+    # --- LÓGICA AÑADIDA PARA NUEVOS FILTROS ---
+    if vehicle_type:
+        where_clauses.append("vehicle_type = %s")
+        query_params.append(vehicle_type)
+    if access_status:
+        where_clauses.append("access_status = %s")
+        query_params.append(access_status)
+    if driving_direction:
+        where_clauses.append("driving_direction = %s")
+        query_params.append(driving_direction)
+    # --- FIN DE LA LÓGICA AÑADIDA ---
+
     if where_clauses:
         base_query += " WHERE " + " AND ".join(where_clauses)
+        
     count_query = "SELECT COUNT(*) " + base_query
-    sql_query = f"SELECT id, plate_number, camera_id, timestamp, image_filename, confidence, processed_data {base_query}"
+    # La consulta SELECT ya incluye todas las columnas necesarias
+    sql_query = f"SELECT id, plate_number, camera_id, timestamp, image_filename, confidence, processed_data, vehicle_type, access_status, driving_direction {base_query}"
+    
     try:
         count_cursor = conn.cursor()
         count_cursor.execute(count_query, query_params)
         total_events = count_cursor.fetchone()[0]
         count_cursor.close()
+        
         total_pages = ceil(total_events / limit) if limit > 0 else 0
+        
         data_cursor = conn.cursor(dictionary=True)
         sql_query += " ORDER BY timestamp DESC LIMIT %s OFFSET %s"
         data_query_params = query_params.copy()
@@ -222,6 +284,7 @@ def get_events():
         data_cursor.execute(sql_query, data_query_params)
         events = data_cursor.fetchall()
         data_cursor.close()
+        
         for event in events:
             if event.get('timestamp'): event['timestamp'] = event['timestamp'].isoformat()
             if event.get('processed_data'):
@@ -229,6 +292,7 @@ def get_events():
                 except (json.JSONDecodeError, TypeError):
                     logger.warning(f"Could not parse processed_data for event ID {event.get('id')}")
                     event['processed_data'] = {}
+                    
         return jsonify({
             "events": events, "total_pages": total_pages,
             "current_page": page, "total_events": total_events

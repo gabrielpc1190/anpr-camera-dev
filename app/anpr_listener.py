@@ -54,7 +54,15 @@ def send_event_async(payload, image_path):
 # Callback for device disconnect
 @CB_FUNCTYPE(None, C_LLONG, c_char_p, C_LDWORD)
 def disconnect_callback(lLoginHandle, pchDVRIP, dwUser):
-    logger.warning(f"Device disconnected: {pchDVRIP.decode('gb2312', 'ignore')}")
+    ip_address = pchDVRIP.decode('gb2312', 'ignore')
+    logger.warning(f"Device disconnected: {ip_address}")
+    # Find the camera in our global list and mark it as logged out
+    for cam in CONFIGURED_CAMERAS:
+        if cam['login_id'] == lLoginHandle:
+            logger.info(f"Resetting connection status for {cam['FriendlyName']}")
+            cam['login_id'] = 0
+            cam['attach_id'] = 0
+            break
 
 # --- FUNCIÓN CALLBACK PARA PROCESAR EVENTOS ---
 @CB_FUNCTYPE(None, C_LLONG, C_DWORD, c_void_p, POINTER(c_ubyte), C_DWORD, C_LDWORD, c_int, c_void_p)
@@ -66,42 +74,60 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
         camera_ip = g_attach_handle_map.get(lAnalyzerHandle, "Unknown IP")
         
         image_filepath = None
-        if pBuffer and dwBufSize > 0:
-            try:
-                plate_number = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
+        # This top-level try/except block ensures the entire callback doesn't crash from any error
+        try:
+            # Step 1: Save the image first. Exit if there is no image.
+            if pBuffer and dwBufSize > 0:
+                plate_number_for_file = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
                 utc = alarm_info.UTC
                 event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
                 time_str = event_time.strftime("%Y%m%d_%H%M%S")
-                filename = f"temp_{time_str}_{camera_ip.replace('.', '-')}_{plate_number}.jpg"
+                filename = f"temp_{time_str}_{camera_ip.replace('.', '-')}_{plate_number_for_file}.jpg"
                 image_filepath = os.path.join(IMAGE_SAVE_DIR, filename)
                 with open(image_filepath, "wb") as f:
                     f.write(bytes(pBuffer[:dwBufSize]))
                 logger.info(f"Temp image saved to {image_filepath}")
-            except Exception as e:
-                logger.error(f"ERROR saving image: {e}")
+            else:
+                logger.warning("No image buffer in event. Cannot process.")
                 return
-        else:
-            logger.warning("No image buffer in event. Cannot send to DB manager.")
-            return
 
-        try:
+            # Step 2: Extract all data fields
             plate_number = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
             utc = alarm_info.UTC
             event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
             
-            direction_map = {0: "Unknown", 1: "Approaching", 2: "Leaving"}
-            driving_direction_code = getattr(alarm_info, 'emCaptureDirection', 0)
-            driving_direction = direction_map.get(driving_direction_code, "Unknown")
-            
-            log_message = f"[{event_time.strftime('%Y-%m-%d %H:%M:%S')}] [{camera_ip}] Plate Detected: {plate_number} | Direction: {driving_direction}"
-            logger.info(log_message)
-            
-            camera_friendly_name = g_ip_to_friendly_name_map.get(camera_ip, camera_ip)
+            # Get Access Control Status
+            access_status_map = {0: "Unknown", 1: "Trust Car", 2: "Suspicious Car", 3: "Normal Car"}
+            access_status_code = getattr(alarm_info.stTrafficCar, 'emCarType', 0)
+            access_status = access_status_map.get(access_status_code, "Other")
 
+            # Get Vehicle Direction (Robust Fallback Method)
+            direction_map = {0: "Unknown", 1: "Approaching", 2: "Leaving"}
+            direction_code = getattr(alarm_info, 'emCarDrivingDirection', 0)
+            driving_direction = direction_map.get(direction_code, "Unknown")
+
+            if driving_direction == "Unknown":
+                if hasattr(alarm_info.stTrafficCar, 'szDrivingDirection'):
+                    # This adds .value to fix the error
+                    direction_str = bytes(alarm_info.stTrafficCar.szDrivingDirection).strip(b'\x00').decode('gb2312', 'ignore').strip()
+                    if direction_str:
+                        driving_direction = direction_str
+
+            # Get Physical Vehicle Type
+            vehicle_type = "Unknown"
+            if hasattr(alarm_info, 'stuVehicle') and hasattr(alarm_info.stuVehicle, 'szObjectType'):
+                vehicle_type = alarm_info.stuVehicle.szObjectType.decode('gb2312', 'ignore').strip()
+
+            # Step 3: Log the complete, final message
+            log_message = f"[{event_time.strftime('%Y-%m-%d %H:%M:%S')}] [{camera_ip}] Plate Detected: {plate_number} | Direction: {driving_direction} | Status: {access_status}"
+            logger.info(log_message)
+
+            # Step 4: Prepare and send the complete payload
+            camera_friendly_name = g_ip_to_friendly_name_map.get(camera_ip, camera_ip)
             plate_color = getattr(alarm_info.stTrafficCar, 'szPlateColor', b'').decode('gb2312', 'ignore').strip() or "N/A"
-            confidence = getattr(alarm_info.stTrafficCar, 'nConfidence', 0)
-            plate_type = getattr(alarm_info.stTrafficCar, 'szPlateType', b'').decode('gb2312', 'ignore').strip() or "N/A"
             vehicle_brand = getattr(alarm_info.stTrafficCar, 'szVehicleSign', b'').decode('gb2312', 'ignore').strip() or "N/A"
+            plate_type = getattr(alarm_info.stTrafficCar, 'szPlateType', b'').decode('gb2312', 'ignore').strip() or "N/A"
+            confidence = getattr(alarm_info.stTrafficCar, 'nConfidence', 0)
 
             event_payload = {
                 "Timestamp": event_time.isoformat(),
@@ -109,7 +135,8 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
                 "PlateNumber": plate_number,
                 "EventType": "TrafficJunction",
                 "CameraID": camera_friendly_name,
-                "VehicleType": getattr(alarm_info.stTrafficCar, 'szVehicleType', b'').decode('gb2312', 'ignore').strip(),
+                "VehicleType": vehicle_type,
+                "AccessStatus": access_status,
                 "VehicleColor": getattr(alarm_info.stTrafficCar, 'szVehicleColor', b'').decode('gb2312', 'ignore').strip(),
                 "PlateColor": plate_color,
                 "DrivingDirection": driving_direction,
@@ -123,11 +150,50 @@ def analyzer_data_callback(lAnalyzerHandle, dwAlarmType, pAlarmInfo, pBuffer, dw
 
         except Exception as e:
             logger.error(f"Error processing plate data or sending event: {e}", exc_info=True)
-
+            # Clean up the temp image if an error occurs before it can be sent
+            if image_filepath and os.path.exists(image_filepath):
+                os.remove(image_filepath)
 # --- FUNCIÓN PRINCIPAL ---
 def main():
     global logger, sdk, IMAGE_SAVE_DIR, g_ip_to_friendly_name_map
 
+    # --- Nested Helper Function for Connection Logic ---
+    def connect_camera(cam_info):
+        """Attempts to log in and subscribe to events for a single camera."""
+        # If already connected, do nothing
+        if cam_info.get("login_id", 0) != 0:
+            return
+
+        logger.info(f"Attempting to connect to {cam_info['FriendlyName']} ({cam_info['IPAddress']})...")
+        stuInParam = NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY()
+        stuInParam.dwSize = sizeof(NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY)
+        stuInParam.szIP = cam_info["IPAddress"].encode()
+        stuInParam.nPort = cam_info["Port"]
+        stuInParam.szUserName = cam_info["Username"]
+        stuInParam.szPassword = cam_info["Password"]
+        stuInParam.emSpecCap = EM_LOGIN_SPAC_CAP_TYPE.TCP
+        stuOutParam = NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY()
+        stuOutParam.dwSize = sizeof(NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY)
+        
+        login_id, _, error_msg = sdk.LoginWithHighLevelSecurity(stuInParam, stuOutParam)
+        
+        if login_id != 0:
+            cam_info["login_id"] = login_id
+            logger.info(f"Login SUCCESS: {cam_info['FriendlyName']} ({cam_info['IPAddress']})")
+            attach_id = sdk.RealLoadPictureEx(login_id, 0, EM_EVENT_IVS_TYPE.TRAFFICJUNCTION, 1, analyzer_data_callback, 0, None)
+            if attach_id != 0:
+                cam_info["attach_id"] = attach_id
+                g_attach_handle_map[attach_id] = cam_info["IPAddress"]
+                logger.info(f"Subscription SUCCESS: {cam_info['FriendlyName']}")
+            else:
+                logger.error(f"Subscription FAILED: {cam_info['FriendlyName']} - Error: {sdk.GetLastError()}")
+                sdk.Logout(login_id)
+                cam_info["login_id"] = 0
+        else:
+            logger.error(f"Login FAILED: {cam_info['FriendlyName']} ({cam_info['IPAddress']}) - {error_msg}")
+
+
+    # --- Initialization and Configuration Loading ---
     config = configparser.ConfigParser(interpolation=None)
     config_path = '/app/config.ini'
     if not os.path.exists(config_path):
@@ -144,7 +210,6 @@ def main():
     os.makedirs(LOG_DIR, exist_ok=True)
     LOG_FILE = os.path.join(LOG_DIR, 'anpr_listener.log')
     
-    # CORRECCIÓN: Se lee la ruta del config.ini como en tu código original.
     IMAGE_SAVE_DIR = config.get('Paths', 'ImageDirectory', fallback='/app/anpr_images')
     os.makedirs(IMAGE_SAVE_DIR, exist_ok=True)
     
@@ -166,7 +231,7 @@ def main():
     logger.info("--- anpr_listener: Starting main function ---")
     
     sdk = NetClient()
-    sdk.InitEx(disconnect_callback) # Usar la función de callback de desconexión
+    sdk.InitEx(disconnect_callback)
     
     logger.info("--- anpr_listener: Loading camera configurations from config.ini ---")
     default_username = config.get('DahuaSDK', 'DefaultUsername').encode()
@@ -197,44 +262,28 @@ def main():
         logger.warning("No enabled cameras found in config.ini. Exiting.")
         return
 
-    logger.info("--- anpr_listener: Attempting to log in to cameras ---")
+    # --- Initial connection attempt ---
+    logger.info("--- anpr_listener: Attempting initial connection to all cameras ---")
     for cam in CONFIGURED_CAMERAS:
-        stuInParam = NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY()
-        stuInParam.dwSize = sizeof(NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY)
-        stuInParam.szIP = cam["IPAddress"].encode()
-        stuInParam.nPort = cam["Port"]
-        stuInParam.szUserName = cam["Username"]
-        stuInParam.szPassword = cam["Password"]
-        stuInParam.emSpecCap = EM_LOGIN_SPAC_CAP_TYPE.TCP
-        stuOutParam = NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY()
-        stuOutParam.dwSize = sizeof(NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY)
-        login_id, _, error_msg = sdk.LoginWithHighLevelSecurity(stuInParam, stuOutParam)
-        
-        if login_id != 0:
-            cam["login_id"] = login_id
-            logger.info(f"Login SUCCESS: {cam['FriendlyName']} ({cam['IPAddress']})")
-            attach_id = sdk.RealLoadPictureEx(login_id, 0, EM_EVENT_IVS_TYPE.TRAFFICJUNCTION, 1, analyzer_data_callback, 0, None)
-            if attach_id != 0:
-                cam["attach_id"] = attach_id
-                g_attach_handle_map[attach_id] = cam["IPAddress"]
-                logger.info(f"Subscription SUCCESS: {cam['FriendlyName']}")
-            else:
-                logger.error(f"Subscription FAILED: {cam['FriendlyName']} - Error: {sdk.GetLastError()}")
-                sdk.Logout(login_id)
-                cam["login_id"] = 0
-        else:
-            logger.error(f"Login FAILED: {cam['FriendlyName']} ({cam['IPAddress']}) - {error_msg}")
+        connect_camera(cam)
 
-    logger.info("\n--- System is running. Waiting for license plate events. Press Ctrl+C to exit. ---")
+    # --- Main Loop for Reconnection and Shutdown ---
+    logger.info("\n--- System is running. Starting health check and reconnect loop. ---")
     try:
         while True:
-            time.sleep(1)
+            # Reconnection loop runs every 60 seconds
+            time.sleep(60)
+            logger.debug("Running periodic health check for camera connections...")
+            for cam in CONFIGURED_CAMERAS:
+                # connect_camera function will check if a connection is needed
+                connect_camera(cam)
+
     except KeyboardInterrupt:
         logger.info("\n--- Shutting down ---")
     finally:
         for cam in CONFIGURED_CAMERAS:
-            if cam["attach_id"] != 0: sdk.StopLoadPic(cam["attach_id"])
-            if cam["login_id"] != 0: sdk.Logout(cam["login_id"])
+            if cam.get("attach_id", 0) != 0: sdk.StopLoadPic(cam["attach_id"])
+            if cam.get("login_id", 0) != 0: sdk.Logout(cam["login_id"])
         sdk.Cleanup()
         logger.info("SDK cleaned up. Exiting.")
 

@@ -18,7 +18,8 @@ services:
       - ./app/config.ini:/app/config.ini:ro
       - ./app/logs:/app/logs
     depends_on:
-      - anpr-db-manager
+      anpr-db-manager:
+        condition: service_healthy
     command: python anpr_listener.py
 
 
@@ -46,6 +47,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    command: gunicorn --bind 0.0.0.0:5001 --workers 2 --log-level warning anpr_db_manager:app
+  
 
   # 3. ANPR Web: Frontend proxy and UI server
   anpr-web:

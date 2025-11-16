@@ -1,141 +1,103 @@
-# ANPR System Project Overview (GEMINI.MD)
+# ANPR Camera System - Documentación del Proyecto
 
-## Core Objective
-Capture license plate data from Dahua ANPR cameras, store it in MariaDB, and provide a web UI for querying.
+## 1. Resumen del Proyecto
 
-## System Components (Post-Refactor)
+Este proyecto implementa un sistema completo de Reconocimiento Automático de Placas (ANPR) diseñado para operar de forma continua (24/7). Captura eventos de placas de vehículos desde cámaras IP Dahua, procesa los datos, almacena la información y las imágenes en una base de datos, y proporciona una interfaz web para visualizar los eventos.
 
-1.  **`anpr_listener` (`app/anpr_listener.py`)**
-    *   **Purpose**: Connects to Dahua cameras, captures events.
-    *   **Functionality**: Subscribes to ANPR events. On event, saves image locally (temp), then asynchronously sends event metadata (JSON) and the image file (`multipart/form-data`) via HTTP POST to `anpr_db_manager`. Async send prevents blocking & event loss. Cleans up temp image after send attempt.
-    *   **Tech**: Python, Dahua NetSDK, `requests`, `threading`.
+El sistema está diseñado para ser robusto y resiliente, con mecanismos de recuperación automática ante reinicios del sistema y fallos temporales de conexión con las cámaras.
 
-2.  **`anpr_db_manager` (`app/anpr_db_manager.py`)**
-    *   **Purpose**: Sole manager of data storage (DB & images). The single source of truth.
-    *   **Functionality**:
-        *   Flask app with one main data ingress endpoint: `/event` (POST).
-        *   Receives `multipart/form-data` (JSON metadata + image file) from `anpr_listener`.
-        *   Saves image to the shared volume (`/app/anpr_images`) with a secure, unique name.
-        *   Inserts event metadata (including the new image filename) into the `anpr_events` table in MariaDB.
-        *   Exposes a full set of read-only API endpoints for the web UI (`/api/events`, `/api/cameras`, etc.) to query the database.
-    *   **Tech**: Python, Flask, `mysql-connector-python`.
+## 2. Características Principales
 
-3.  **`anpr_web` (`app/anpr_web.py`)**
-    *   **Purpose**: Provides the backend for the web UI, acting as a proxy.
-    *   **Functionality**:
-        *   A lightweight Flask app. **Contains no direct DB logic.**
-        *   Serves `index.html`.
-        *   Exposes API endpoints (`/api/events`, etc.) that mirror `anpr_db_manager`'s API.
-        *   When its API is called by the UI, it makes a corresponding HTTP request to `anpr_db_manager` and forwards the response.
-        *   Serves captured images to the user via `/images/<filename>` from the shared volume.
-    *   **Tech**: Python, Flask, `requests`.
+* **Captura de Eventos en Tiempo Real**: Escucha activa de eventos de tráfico enviados por cámaras Dahua.
+* **Procesamiento Asíncrono**: Los eventos se envían a un servicio de base de datos de forma asíncrona para no perder datos, incluso bajo alta carga.
+* **Almacenamiento Persistente**: Guarda información detallada del evento y la imagen de la placa en una base de datos MariaDB.
+* **Interfaz Web**: Una sencilla interfaz web para visualizar, filtrar y paginar los eventos de placas capturadas.
+* **Orquestación con Docker**: Todos los servicios están contenerizados y gestionados con Docker Compose para un despliegue y escalabilidad sencillos.
+* **Resiliencia Mejorada**: El sistema se recupera automáticamente de reinicios y reconecta con cámaras que han perdido la conexión.
+* **Captura de Datos Enriquecida**: Además de la placa, el sistema ahora captura:
+    * **Tipo de Vehículo Físico**: (ej. "MotorVehicle").
+    * **Dirección de Movimiento**: (ej. "Approaching", "Leaving").
+    * **Estado de Acceso**: (ej. "Normal Car", "Trust Car").
 
-4.  **`mariadb`**: MariaDB 10.6 instance. Data persisted in a bind-mounted volume.
+## 3. Arquitectura del Sistema
 
-5.  **`cloudflared-tunnel`**: Exposes `anpr_web` to the internet.
+El sistema está compuesto por varios microservicios que trabajan en conjunto:
 
-## Configuration & Docker
-*   **`.env`**: Cloudflare token, MariaDB credentials.
-*   **`app/config.ini`**: Camera connection details. Contains a global `LogLevel` (0-3) to control logging verbosity across all Python services.
-*   **`docker-compose.yml`**: Orchestrates all services. Uses specific Dockerfiles for each service.
-*   **`anpr_listener.Dockerfile`, `anpr_db_manager.Dockerfile`, `anpr_web.Dockerfile`**: Optimized, service-specific Dockerfiles. Only `anpr_listener`'s image contains the large Dahua SDK and its dependencies.
-*   **`setup.sh`**: Host setup script. **Crucially, it downloads the Dahua SDK and places the `.whl` file in the `app/` directory, which is required by `anpr_listener.Dockerfile` during the build process.**
+1.  **`anpr-listener`**:
+    * Un servicio de Python que se conecta al SDK de Dahua.
+    * Se suscribe a los eventos de tráfico (ANPR) de las cámaras configuradas.
+    * **Autorreparación**: Incluye un bucle de salud que verifica periódicamente la conexión con cada cámara e intenta reconectar automáticamente si una cámara se reinicia o pierde la conexión.
+    * Al recibir un evento, envía los datos y la imagen de forma asíncrona al `anpr-db-manager`.
 
-## Refactored Workflow Summary
+2.  **`anpr-db-manager`**:
+    * Una API de Python (Flask/Gunicorn) que actúa como la única fuente de verdad para la base de datos.
+    * Recibe los eventos del `listener`, guarda la imagen en el disco y escribe los metadatos en la base de datos.
+    * Expone endpoints para que la interfaz web pueda consultar los datos.
 
-1.  `anpr_listener` connects to cameras.
-2.  On event, `anpr_listener` saves the image to a temporary file.
-3.  `anpr_listener` **asynchronously** POSTs the event JSON and the temp image file to `anpr_db_manager`'s `/event` endpoint.
-4.  `anpr_db_manager` receives the data, saves the image to the persistent `/app/anpr_images` volume with a new permanent name, and writes the event metadata (with the new filename) to MariaDB.
-5.  `anpr_listener` deletes the temporary image file.
-6.  User accesses the UI via `anpr_web`.
-7.  `index.html` calls an API on `anpr_web` (e.g., `/api/events`).
-8.  `anpr_web` calls the corresponding API on `anpr_db_manager` (`/api/events`).
-9.  `anpr_db_manager` queries MariaDB and returns the data to `anpr_web`.
-10. `anpr_web` returns the data to the UI.
+3.  **`anpr-web`**:
+    * Una aplicación web de Python (Flask/Gunicorn) que sirve la interfaz de usuario.
+    * Actúa como un proxy, consultando los datos del `anpr-db-manager` para mostrarlos al usuario de forma segura.
 
-## Service Interaction Details
+4.  **`mariadb`**:
+    * El servicio de base de datos donde se almacenan todos los eventos.
 
-This section details the data flow, request/response formats, and expectations between the core services.
+5.  **`cloudflared-tunnel`**:
+    * Un servicio opcional que expone de forma segura la interfaz web a Internet a través de un túnel de Cloudflare.
 
-### 1. `anpr_listener` -> `anpr_db_manager` (Event Ingestion)
+## 4. Configuración
 
-*   **Purpose:** `anpr_listener` sends detected ANPR events and associated images to `anpr_db_manager` for storage.
-*   **`anpr_listener` (Sender):**
-    *   **Endpoint Targeted:** `anpr_db_manager`'s `/event` (POST).
-    *   **Request Format:** `multipart/form-data`.
-        *   `event_data` (form field): JSON string containing event metadata (e.g., `Timestamp`, `PlateNumber`, `CameraID`, `VehicleType`, `VehicleColor`, `PlateColor`, `DrivingDirection`, `VehicleSpeed`, `Lane`).
-        *   `image` (file field): The captured image file (JPEG).
-    *   **Expects (Response from `anpr_db_manager`):**
-        *   `201 Created` with JSON: `{"status": "success", "message": "Event and image processed"}`.
-        *   Handles `requests.exceptions.RequestException` (e.g., connection errors, non-2xx status codes) and `FileNotFoundError`.
-*   **`anpr_db_manager` (Receiver - `/event` endpoint):**
-    *   **Data Processing:**
-        1.  Validates presence of `event_data` and `image` file.
-        2.  Parses `event_data` JSON.
-        3.  Sanitizes and saves image to `/app/anpr_images`.
-        4.  Parses `EventTimeUTC` string into a `datetime` object.
-        5.  Inserts event metadata (including image filename and full `event_data` as JSON) into the `anpr_events` table.
-    *   **Response Emitted:**
-        *   `201 Created` on success.
-        *   `400 Bad Request` for missing/invalid data.
-        *   `500 Internal Server Error` for image saving/DB insertion errors.
-        *   `503 Service Unavailable` if DB connection fails.
+La configuración del proyecto se divide en dos archivos principales:
 
-### 2. `anpr_web` -> `anpr_db_manager` (API Proxying)
+* **`.env`**: Gestiona las credenciales y secretos del entorno, como contraseñas de la base de datos y tokens de API.
+* **`app/config.ini`**: Gestiona la configuración de la aplicación, como las direcciones IP, nombres y credenciales de cada cámara.
 
-*   **Purpose:** `anpr_web` acts as a proxy, forwarding API requests from the web UI to `anpr_db_manager`.
-*   **`anpr_web` (Sender/Proxy):**
-    *   **Endpoints Targeted:**
-        *   `anpr_db_manager`'s `/api/events` (GET).
-        *   `anpr_db_manager`'s `/api/cameras` (GET).
-        *   `anpr_db_manager`'s `/api/events/latest_timestamp` (GET).
-    *   **Request Format:** Standard HTTP GET requests.
-        *   `/api/events`: Forwards all query parameters (e.g., `page`, `limit`, `plate_number`, `camera_id`, `start_date`, `end_date`).
-        *   `/api/cameras`, `/api/events/latest_timestamp`: No specific parameters.
-    *   **Expects (Response from `anpr_db_manager`):**
-        *   `200 OK` with a JSON body.
-        *   Handles `requests.exceptions.RequestException` (e.g., `anpr_db_manager` is down) and aborts with `502 Bad Gateway`.
-*   **`anpr_db_manager` (Receiver - `/api/*` endpoints):**
-    *   **Data Processing:**
-        1.  Establishes a database connection.
-        2.  Executes SQL queries based on the endpoint:
-            *   `/api/events`: Queries `anpr_events` table with pagination and filtering.
-            *   `/api/cameras`: Queries `anpr_events` for distinct `camera_id`s.
-            *   `/api/events/latest_timestamp`: Queries `anpr_events` for the maximum `timestamp`.
-    *   **Response Emitted:**
-        *   `200 OK` with JSON data (events list, camera list, or latest timestamp).
-        *   `503 Service Unavailable` if DB connection fails.
+## 5. Uso
 
-### 3. Client (Web Browser) -> `anpr_web` (UI Interaction)
+El proyecto se gestiona a través de un script de ayuda `setup.sh`.
 
-*   **Purpose:** The web browser interacts with `anpr_web` to display the UI, fetch images, and retrieve event data.
-*   **Client (Web Browser) (Sender):**
-    *   **Endpoints Targeted:**
-        *   `anpr_web`'s `/` (GET).
-        *   `anpr_web`'s `/images/<path:filename>` (GET).
-        *   `anpr_web`'s `/api/*` (GET).
-    *   **Request Format:** Standard HTTP GET requests.
-*   **`anpr_web` (Receiver):**
-    *   **Data Processing:**
-        1.  `/`: Serves `index.html`.
-        2.  `/images/<path:filename>`: Serves image files from `/app/anpr_images` after path sanitization.
-        3.  `/api/*`: Proxies requests to `anpr_db_manager` (as described in section 2).
-    *   **Response Emitted:**
-        *   `200 OK` (HTML, image data, or proxied JSON).
-        *   `404 Not Found` for invalid image paths.
-        *   `502 Bad Gateway` if proxying to `anpr_db_manager` fails.
+* **Para iniciar todos los servicios**:
+    ```bash
+    ./setup.sh start
+    ```
+* **Para detener todos los servicios**:
+    ```bash
+    ./setup.sh stop
+    ```
+* **Para ver los logs en tiempo real**:
+    ```bash
+    ./setup.sh logs
+    ```
+* **Para seguir los logs de un servicio específico** (ej. `anpr-listener`):
+    ```bash
+    ./setup.sh logs anpr-listener
+    ```
 
-## Current Known Issues (July 12, 2025)
+## 6. Resiliencia del Sistema
 
-This section documents current unresolved issues.
+El sistema ha sido mejorado para garantizar una operación continua y fiable:
 
-### 1. `anpr_db_manager_service` Event Ingestion Failure
+* **Recuperación ante Reinicios**: Gracias a las condiciones `service_healthy` en `docker-compose.yml`, los servicios se inician en el orden correcto, evitando que el `anpr-listener` falle si la base de datos aún no está lista.
+* **Reconexión Automática de Cámaras**: El `anpr-listener` ahora comprueba activamente el estado de la conexión con cada cámara cada 60 segundos. Si una cámara se desconecta (por un reinicio o un fallo de red), el servicio intentará reconectarse automáticamente hasta que lo consiga.
 
-*   **Problem**: `anpr_listener_service` consistently receives `500 Internal Server Error` when sending ANPR events to `anpr_db_manager`'s `/event` endpoint. `anpr_db_manager_service` also appears to be restarting frequently, suggesting an unhandled exception during event processing.
-*   **Impact**: License plate data and images are not being reliably stored in the MariaDB database.
+## 7. Solución de Problemas (Troubleshooting)
 
-### 2. `anpr_db_manager` API Endpoints Incomplete
+Esta sección documenta los problemas comunes encontrados y sus soluciones.
 
-*   **Problem**: The `/api/events`, `/api/cameras`, and `/api/events/latest_timestamp` endpoints in `anpr_db_manager.py` are currently placeholder implementations and do not query the database or return actual data.
-*   **Impact**: The `anpr_web` UI cannot retrieve historical event data, camera lists, or the latest timestamp from the database.
+#### **Problema 1: El servicio deja de funcionar después de un reinicio del sistema.**
+
+* **Síntoma**: El contenedor `anpr-listener` aparece como "Up" en `docker-compose ps`, pero no procesa nuevos eventos y no genera nuevos logs.
+* **Causa**: Condición de carrera en el arranque. El `listener` intentaba iniciarse antes de que el `anpr-db-manager` estuviera completamente listo, fallando al conectar y quedando en un estado "zombi".
+* **Solución**: Se modificó `docker-compose.yml` para que `anpr-listener` espere a que la condición de salud (`service_healthy`) de `anpr-db-manager` sea exitosa.
+
+#### **Problema 2: El sistema deja de capturar eventos si una cámara se reinicia.**
+
+* **Síntoma**: El log del `anpr-listener` muestra un mensaje de "Device disconnected" pero nunca vuelve a capturar eventos de esa cámara.
+* **Causa**: El script no tenía lógica para reintentar la conexión después de una desconexión.
+* **Solución**: Se implementó un bucle de autorreparación en `anpr_listener.py` que cada 60 segundos verifica las conexiones caídas e intenta volver a iniciar sesión y suscribirse a los eventos.
+
+#### **Problema 3: La dirección del vehículo, tipo de vehículo u otros datos no se capturan.**
+
+* **Síntoma**: Los campos en la base de datos o en los logs aparecen como "Unknown" o vacíos, incluso si la placa se lee correctamente.
+* **Causa 1**: La cámara no está configurada para analizar y enviar estos datos. Es necesario activar las reglas IVS (Intelligent Video System) correspondientes en la interfaz web de la cámara.
+* **Causa 2**: El script de Python está buscando un nombre de campo incorrecto en los datos enviados por el SDK.
+* **Solución**: Se analizaron los logs de depuración y los archivos del SDK para identificar los nombres de campo correctos (`szDrivingDirection`, `szObjectType`, etc.) y se implementó una lógica de "fallback" en `anpr_listener.py` para asegurar que se capturen los datos de la fuente más fiable disponible.

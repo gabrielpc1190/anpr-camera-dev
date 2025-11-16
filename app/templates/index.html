@@ -30,10 +30,17 @@
                 <select id="camera_id" name="camera_id" class="p-2 border rounded">
                     <option value="">All Cameras</option>
                 </select>
-                <input type="text" name="vehicle_type" placeholder="Vehicle Type" class="p-2 border rounded" disabled>
-                <input type="text" name="vehicle_color" placeholder="Vehicle Color" class="p-2 border rounded" disabled>
-                <select name="driving_direction" class="p-2 border rounded" disabled>
+                <input type="text" name="vehicle_type" placeholder="Vehicle Type (e.g., Vehicle)" class="p-2 border rounded">
+                <select name="access_status" class="p-2 border rounded">
+                    <option value="">All Statuses</option>
+                    <option value="Normal Car">Normal Car</option>
+                    <option value="Trust Car">Trust Car</option>
+                    <option value="Suspicious Car">Suspicious Car</option>
+                </select>
+                <select name="driving_direction" class="p-2 border rounded">
                     <option value="">All Directions</option>
+                    <option value="Approach">Approach</option>
+                    <option value="Leave">Leave</option>
                 </select>
                 <input type="date" name="start_date" class="p-2 border rounded">
                 <input type="date" name="end_date" class="p-2 border rounded">
@@ -55,6 +62,7 @@
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plate Number</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Access Status</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle Type</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle Color</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Direction</th>
@@ -62,7 +70,7 @@
                     </tr>
                 </thead>
                 <tbody id="eventsTableBody" class="bg-white divide-y divide-gray-200">
-                    <tr><td colspan="7" class="text-center p-4 text-gray-500">Loading events...</td></tr>
+                    <tr><td colspan="8" class="text-center p-4 text-gray-500">Loading events...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -124,7 +132,7 @@
         }
 
         async function fetchEvents(page = 1, filters = new URLSearchParams()) {
-            eventsTableBody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-gray-500"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>Loading events...</td></tr>';
+            eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-gray-500"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>Loading events...</td></tr>';
             
             const params = new URLSearchParams(filters);
             params.set('page', page);
@@ -143,7 +151,7 @@
                 updateTable(data.events);
                 updatePaginationControls();
             } else {
-                eventsTableBody.innerHTML = '<tr><td colspan="7" class="text-center p-4 text-red-500">Error loading events. Please try again later.</td></tr>';
+                eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-red-500">Error loading events. Please try again later.</td></tr>';
                 totalPages = 0; currentPage = 1;
                 updatePaginationControls();
             }
@@ -152,7 +160,7 @@
         function updateTable(events) {
             eventsTableBody.innerHTML = '';
             if (!events || events.length === 0) {
-                eventsTableBody.innerHTML = '<tr><td colspan="7" class="text-center p-4 text-gray-500">No events found.</td></tr>';
+                eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">No events found.</td></tr>';
                 return;
             }
             events.forEach((event, index) => {
@@ -162,15 +170,17 @@
                 const sanitize = str => str ? String(str).replace(/</g, "&lt;").replace(/>/g, "&gt;") : 'N/A';
                 const imageUrl = event.image_filename ? `/images/${event.image_filename}` : '#';
                 const processedData = event.processed_data || {};
+                
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap">
                         ${event.image_filename ? `<a href="${imageUrl}" target="_blank" title="Click to view full image"><img src="${imageUrl}" alt="Plate ${sanitize(event.plate_number)}" class="h-16 w-24 object-cover rounded-md shadow-sm hover:shadow-lg transition-shadow"></a>` : 'No Image'}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.timestamp)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${sanitize(event.plate_number)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(processedData.VehicleType)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.access_status)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.vehicle_type)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(processedData.VehicleColor)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(processedData.DrivingDirection)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.driving_direction)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.camera_id)}</td>
                 `;
                 eventsTableBody.appendChild(row);
