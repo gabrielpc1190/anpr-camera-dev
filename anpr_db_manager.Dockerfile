@@ -15,6 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY ./app /app
 
+# Copy and set up the entrypoint script
+COPY app/db_manager_entrypoint.sh /app/db_manager_entrypoint.sh
+RUN chmod +x /app/db_manager_entrypoint.sh
+ENTRYPOINT ["/app/db_manager_entrypoint.sh"]
+
 # Expose port
 EXPOSE 5001
 

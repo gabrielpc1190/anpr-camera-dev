@@ -46,9 +46,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    command: ls -la
-  
 
   # 3. ANPR Web: Frontend proxy and UI server
   anpr-web:

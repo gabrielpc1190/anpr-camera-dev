@@ -60,18 +60,18 @@ install_dependencies() {
                 . /etc/os-release
                 OS_ID_TEMP=$ID # Use a temporary variable for OS_ID to avoid conflict if sourced multiple times
                 if [[ "$OS_ID_TEMP" == "ubuntu" || "$OS_ID_TEMP" == "debian" ]]; then
-                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                    export COMPOSE_CMD="$SUDO_CMD docker compose"
                 elif [[ "$OS_ID_TEMP" == "centos" || "$OS_ID_TEMP" == "rhel" || "$OS_ID_TEMP" == "fedora" ]]; then
                     if [ -x "/usr/local/bin/docker-compose" ]; then # Check if the specific version was installed
                         export COMPOSE_CMD="$SUDO_CMD /usr/local/bin/docker-compose"
                     else
-                        export COMPOSE_CMD="$SUDO_CMD docker-compose" # Fallback to system default
+                        export COMPOSE_CMD="$SUDO_CMD docker compose" # Fallback to system default
                     fi
                 else # Fallback for other OS types
-                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                    export COMPOSE_CMD="$SUDO_CMD docker compose"
                 fi
             else # Fallback if /etc/os-release is not found
-                 export COMPOSE_CMD="$SUDO_CMD docker-compose"
+                 export COMPOSE_CMD="$SUDO_CMD docker compose"
             fi
         fi
         return
@@ -99,11 +99,48 @@ install_dependencies() {
 
     case "$OS_ID" in
         ubuntu|debian)
+            echo "Performing a full purge of existing Docker packages to ensure a clean state..."
+            # Stop docker services first to release any locks
+            $SUDO_CMD systemctl stop docker.socket || true
+            $SUDO_CMD systemctl stop docker.service || true
+            # Purge all official and unofficial docker packages
+            $SUDO_CMD apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras || true
+            $SUDO_CMD apt-get purge -y docker.io docker-compose docker-doc podman-docker containerd runc || true
+            $SUDO_CMD apt-get autoremove -y || true
+
+            echo "Deleting old Docker data, configs, and keys..."
+            $SUDO_CMD rm -rf /var/lib/docker
+            $SUDO_CMD rm -rf /var/lib/containerd
+            $SUDO_CMD rm -f /etc/apt/sources.list.d/docker.list
+            $SUDO_CMD rm -f /etc/apt/keyrings/docker.asc
+
             echo "Updating package list..."
             $SUDO_CMD apt-get update -y
-            echo "Installing dependencies: docker.io, docker-compose, curl, unzip..."
-            $SUDO_CMD apt-get install -y docker.io docker-compose curl unzip
-            export COMPOSE_CMD="$SUDO_CMD docker-compose"
+            $SUDO_CMD apt-get install -y ca-certificates curl
+
+            echo "Setting up Docker's official GPG key..."
+            $SUDO_CMD install -m 0755 -d /etc/apt/keyrings
+            $SUDO_CMD curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+            $SUDO_CMD chmod a+r /etc/apt/keyrings/docker.asc
+
+            echo "Adding Docker's repository to Apt sources..."
+            echo \
+              "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+              $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+              $SUDO_CMD tee /etc/apt/sources.list.d/docker.list > /dev/null
+            $SUDO_CMD apt-get update -y
+
+            echo "Installing a specific, stable version of Docker Engine and related packages..."
+            VERSION_STRING="5:28.5.2-1~ubuntu.24.04~noble"
+            $SUDO_CMD apt-get install -y \
+                docker-ce=$VERSION_STRING \
+                docker-ce-cli=$VERSION_STRING \
+                containerd.io \
+                docker-buildx-plugin \
+                docker-compose-plugin
+
+            # Use docker compose (with a space) as the command
+            export COMPOSE_CMD="$SUDO_CMD docker compose"
             ;;
         centos|rhel|fedora)
             echo "Installing dependencies using yum/dnf..."
