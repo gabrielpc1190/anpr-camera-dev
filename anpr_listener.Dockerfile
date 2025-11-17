@@ -37,6 +37,3 @@ RUN echo "--- Installing SDK wheel file ---" && \
     rm -f "$WHL_FILE" && \
     echo "--- SDK Installation Complete ---"
 
-# Create a non-root user
-RUN useradd -ms /bin/bash appuser
-USER appuser

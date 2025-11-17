@@ -19,9 +19,6 @@ COPY app/models.py .
 # Expose port
 EXPOSE 5001
 
-# Create a non-root user
-RUN useradd -ms /bin/bash appuser
-USER appuser
 
 # Run the application
 CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--log-level", "warning", "anpr_db_manager:app"]
