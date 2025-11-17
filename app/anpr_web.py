@@ -1,32 +1,29 @@
 import os, logging, sys
 import requests
 from flask import Flask, jsonify, request, send_from_directory, abort, render_template, redirect, url_for, flash
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-import bcrypt
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 import configparser
+from app.models import db, User
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'a_secure_secret_key')
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    # This check is done here to ensure logger is available.
+    # We will set up logger first, then check for SECRET_KEY.
+    # BasicConfig is used for the critical log message if logger setup fails.
+    logging.basicConfig(level=logging.CRITICAL)
+    logger_fallback = logging.getLogger(__name__)
+    logger_fallback.critical("CRITICAL: La variable de entorno SECRET_KEY no está configurada. La aplicación no puede iniciarse de forma segura.")
+    sys.exit(1)
+app.config['SECRET_KEY'] = SECRET_KEY
 db_host = os.getenv('MYSQL_HOST', 'mariadb')
 app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{os.getenv('MYSQL_USER')}:{os.getenv('MYSQL_PASSWORD')}@{db_host}/{os.getenv('MYSQL_DATABASE')}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy(app)
+db.init_app(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
-
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(150), unique=True, nullable=False)
-    password = db.Column(db.String(150), nullable=False)
-
-    def set_password(self, password):
-        self.password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-    def check_password(self, password):
-        return bcrypt.checkpw(password.encode('utf-8'), self.password.encode('utf-8'))
 
 @login_manager.user_loader
 def load_user(user_id):

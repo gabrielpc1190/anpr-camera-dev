@@ -1,0 +1,30 @@
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.30kB done
+#1 DONE 0.0s
+
+#2 [anpr-web internal] load build definition from anpr_web.Dockerfile
+#2 transferring dockerfile: 498B done
+#2 DONE 0.0s
+
+#3 [anpr-listener internal] load build definition from anpr_listener.Dockerfile
+#3 transferring dockerfile: 1.36kB done
+#3 DONE 0.0s
+
+#4 [anpr-db-manager internal] load build definition from anpr_db_manager.Dockerfile
+#4 transferring dockerfile: 545B done
+#4 DONE 0.0s
+
+#5 [auth] library/python:pull token for registry-1.docker.io
+#5 DONE 0.0s
+
+#6 [anpr-listener internal] load metadata for docker.io/library/python:3.11-slim-bookworm
+#6 DONE 0.3s
+
+#7 [anpr-listener internal] load .dockerignore
+#7 transferring context: 989B done
+#7 DONE 0.0s
+
+#8 [anpr-listener 1/5] FROM docker.io/library/python:3.11-slim-bookworm@sha256:50068b28f3105e4a3116e091993304eccb38895d676c8dae174c5b01a4d30dfb
+#8 DONE 0.0s
+
+#9 [anpr-web internal] load build context

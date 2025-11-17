@@ -5,22 +5,22 @@ version: '3.8'
 
 services:
   # 1. ANPR Listener: Captures events from cameras
-  # anpr-listener:
-  #   build:
-  #     context: .
-  #     dockerfile: anpr_listener.Dockerfile
-  #   container_name: anpr-listener
-  #   restart: always
-  #   env_file: .env
-  #   environment:
-  #     - DB_MANAGER_URL=http://anpr-db-manager:5001/event
-  #   volumes:
-  #     - ./app/config.ini:/app/config.ini:ro
-  #     - ./app/logs:/app/logs
-  #   depends_on:
-  #     anpr-db-manager:
-  #       condition: service_healthy
-  #   command: python anpr_listener.py
+  anpr-listener:
+    build:
+      context: .
+      dockerfile: anpr_listener.Dockerfile
+    container_name: anpr-listener
+    restart: always
+    env_file: .env
+    environment:
+      - DB_MANAGER_URL=http://anpr-db-manager:5001/event
+    volumes:
+      - ./app/config.ini:/app/config.ini:ro
+      - ./app/logs:/app/logs
+    depends_on:
+      anpr-db-manager:
+        condition: service_healthy
+    command: python anpr_listener.py
 
 
   # 2. ANPR DB Manager: The single source of truth for data
@@ -47,7 +47,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    command: ls -la
   
 
   # 3. ANPR Web: Frontend proxy and UI server
@@ -77,8 +76,6 @@ services:
     image: mariadb:10.6
     container_name: anpr-mariadb
     restart: always
-    ports:
-      - "3306:3306"
     env_file: .env
     volumes:
       - ./app/db:/var/lib/mysql
