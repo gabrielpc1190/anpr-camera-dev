@@ -1,7 +1,6 @@
 import time, sys, logging, os, re, configparser, uuid, json
 from datetime import datetime
-import pymysql
-import pymysql.cursors
+import mysql.connector
 from flask import Flask, jsonify, request, abort
 from werkzeug.utils import secure_filename
 from math import ceil
@@ -82,8 +81,8 @@ def initialize_database():
         return True
     conn = None
     try:
-        conn = pymysql.connect(
-            host=DB_HOST, user=DB_USER, passwd=DB_PASSWORD, db=DB_NAME
+        conn = mysql.connector.connect(
+            host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME
         )
         cursor = conn.cursor()
         
@@ -110,7 +109,7 @@ def initialize_database():
         TABLE_INITIALIZED = True
         logger.info("Database schema is up to date.")
         return True
-    except pymysql.Error as err:
+    except mysql.connector.Error as err:
         logger.error(f"Error initializing database: {err}", exc_info=True)
         return False
     finally:
@@ -122,13 +121,13 @@ def get_db_connection():
     try:
         if not TABLE_INITIALIZED:
             initialize_database()
-        conn = pymysql.connect(
-            host=DB_HOST, user=DB_USER, passwd=DB_PASSWORD,
-            db=DB_NAME
+        conn = mysql.connector.connect(
+            host=DB_HOST, user=DB_USER, password=DB_PASSWORD,
+            database=DB_NAME, autocommit=False
         )
         logger.debug("Successfully established new database connection.")
         return conn
-    except pymysql.Error as err:
+    except mysql.connector.Error as err:
         logger.error(f"Failed to connect to database: {err}")
         return None
 
@@ -170,7 +169,7 @@ def receive_event():
         else:
             return jsonify({"status": "error", "message": "Failed to insert event into database"}), 500
     finally:
-        if conn and conn.open: conn.close()
+        if conn and conn.is_connected(): conn.close()
 
 # In anpr_db_manager.py
 
@@ -206,7 +205,7 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
         db_conn.commit()
         logger.info(f"Event for plate '{plate_number}' (Direction: {driving_direction}) inserted successfully. DB Row ID: {last_id}")
         return True
-    except pymysql.Error as err:
+    except mysql.connector.Error as err:
         logger.error(f"Error inserting event into database: {err}", exc_info=True)
         db_conn.rollback()
         return False
@@ -278,7 +277,7 @@ def get_events():
         
         total_pages = ceil(total_events / limit) if limit > 0 else 0
         
-        data_cursor = conn.cursor(pymysql.cursors.DictCursor)
+        data_cursor = conn.cursor(dictionary=True)
         sql_query += " ORDER BY timestamp DESC LIMIT %s OFFSET %s"
         data_query_params = query_params.copy()
         data_query_params.extend([limit, offset])
@@ -298,11 +297,11 @@ def get_events():
             "events": events, "total_pages": total_pages,
             "current_page": page, "total_events": total_events
         })
-    except pymysql.Error as err:
+    except mysql.connector.Error as err:
         logger.error(f"Error fetching events: {err}", exc_info=True)
         return jsonify({"status": "error", "message": "Error querying database"}), 500
     finally:
-        if conn and conn.open: conn.close()
+        if conn and conn.is_connected(): conn.close()
 
 @app.route('/api/cameras', methods=['GET'])
 def get_cameras():
@@ -314,12 +313,12 @@ def get_cameras():
         cursor.execute("SELECT DISTINCT camera_id FROM anpr_events WHERE camera_id IS NOT NULL AND camera_id != '' ORDER BY camera_id")
         cameras = [row[0] for row in cursor.fetchall()]
         return jsonify({"cameras": cameras})
-    except pymysql.Error as err:
+    except mysql.connector.Error as err:
         logger.error(f"Error fetching camera IDs: {err}", exc_info=True)
         return jsonify({"cameras": []}), 500
     finally:
         if cursor: cursor.close()
-        if conn and conn.open: conn.close()
+        if conn and conn.is_connected(): conn.close()
 
 @app.route('/api/events/latest_timestamp', methods=['GET'])
 def get_latest_timestamp():
@@ -350,19 +349,19 @@ def get_latest_timestamp():
             "latest_timestamp": latest_timestamp.isoformat() if latest_timestamp else None,
             "new_events_count": new_events_count
         })
-    except pymysql.Error as err:
+    except mysql.connector.Error as err:
         logger.error(f"Error fetching latest timestamp: {err}", exc_info=True)
         return jsonify({"latest_timestamp": None, "new_events_count": 0}), 500
     finally:
         if cursor: cursor.close()
-        if conn and conn.open: conn.close()
+        if conn and conn.is_connected(): conn.close()
 
 @app.route('/health', methods=['GET'])
 def health_check():
     conn = None
     try:
         conn = get_db_connection()
-        if conn and conn.open:
+        if conn and conn.is_connected():
             return jsonify({"status": "ok", "message": "Database connection successful"}), 200
         else:
             return jsonify({"status": "error", "message": "Database connection failed"}), 503
@@ -370,7 +369,7 @@ def health_check():
         logger.error(f"Health check failed: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Health check failed"}), 500
     finally:
-        if conn and conn.open: conn.close()
+        if conn and conn.is_connected(): conn.close()
 
 if __name__ == '__main__':
     initialize_database()

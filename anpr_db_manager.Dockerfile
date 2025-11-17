@@ -5,20 +5,20 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
-# Set work directory
+# Set the working directory
 WORKDIR /app
 
-# Install dependencies
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
-COPY app/anpr_db_manager.py .
-COPY app/models.py .
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Expose port
+# Copy only the necessary files for this service
+COPY app/anpr_db_manager.py .
+
 EXPOSE 5001
 
-
-# Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--log-level", "warning", "anpr_db_manager:app"]
+# The default command to run when the container starts
+CMD ["python", "anpr_db_manager.py"]
