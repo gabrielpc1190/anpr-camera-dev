@@ -1,11 +1,33 @@
 import os, logging, sys
 import requests
-from flask import Flask, jsonify, request, send_from_directory, abort
-
+from flask import Flask, jsonify, request, send_from_directory, abort, render_template, redirect, url_for, flash
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 import configparser
+from app.models import db, User
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    # This check is done here to ensure logger is available.
+    # We will set up logger first, then check for SECRET_KEY.
+    # BasicConfig is used for the critical log message if logger setup fails.
+    logging.basicConfig(level=logging.CRITICAL)
+    logger_fallback = logging.getLogger(__name__)
+    logger_fallback.critical("CRITICAL: La variable de entorno SECRET_KEY no está configurada. La aplicación no puede iniciarse de forma segura.")
+    sys.exit(1)
+app.config['SECRET_KEY'] = SECRET_KEY
+db_host = os.getenv('MYSQL_HOST', 'mariadb')
+app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{os.getenv('MYSQL_USER')}:{os.getenv('MYSQL_PASSWORD')}@{db_host}/{os.getenv('MYSQL_DATABASE')}"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 # --- Configuration ---
 config = configparser.ConfigParser(interpolation=None)
@@ -40,7 +62,29 @@ app.logger.setLevel(log_level)
 
 # --- API Endpoints (Proxy to anpr_db_manager) ---
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            login_user(user)
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password')
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
 @app.route('/api/events', methods=['GET'])
+@login_required
 def proxy_events():
     query_params = request.query_string.decode('utf-8')
     try:
@@ -59,6 +103,7 @@ def proxy_events():
         abort(502, description="Error connecting to the database service.")
 
 @app.route('/api/cameras', methods=['GET'])
+@login_required
 def proxy_cameras():
     try:
         backend_response = requests.get(f"{DB_MANAGER_API_URL}/api/cameras", timeout=5)
@@ -76,6 +121,7 @@ def proxy_cameras():
         abort(502, description="Error connecting to the database service.")
 
 @app.route('/api/events/latest_timestamp', methods=['GET'])
+@login_required
 def proxy_latest_timestamp():
     query_params = request.query_string.decode('utf-8')
     try:
@@ -96,12 +142,14 @@ def proxy_latest_timestamp():
 # --- Static File Serving ---
 
 @app.route('/images/<path:filename>')
+@login_required
 def serve_image(filename):
     if '..' in filename or filename.startswith('/'):
         abort(404)
     return send_from_directory(IMAGE_DIR, filename)
 
 @app.route('/')
+@login_required
 def index():
     return send_from_directory('templates', 'index.html')
 
