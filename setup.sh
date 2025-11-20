@@ -36,158 +36,9 @@ usage() {
     echo "  restart      Restarts all services."
     echo "  logs [service] Shows logs for all services or a specific one. (e.g., '$0 logs anpr-listener')"
     echo "  clean [--force] Stops services and optionally deletes data from host volumes. Use --force to skip confirmation."
-    echo "  reconfigure  Stops services, allowing manual edit of .env and config.ini before restart."
-    echo "  update       Pulls the latest code from git, rebuilds Docker images, and restarts services. Preserves data and config files."
+    echo "  reconfigure  Stops services and prompts you to edit configuration files."
+    echo "  update       Updates the system by pulling git changes, rebuilding images, and restarting services."
     echo
-    echo "If no command is provided, it will run the first-time setup or show this help."
-}
-
-# Function to install required system dependencies
-install_dependencies() {
-    # Ensure LOG_DIR_HOST exists before trying to use it for the marker file
-    mkdir -p "${LOG_DIR_HOST}"
-
-    if [ -f "${DEPS_MARKER_FILE}" ]; then
-        echo -e "${GREEN}--- System dependencies appear to be already checked/installed. Skipping. ---${NC}"
-        # Still need to export COMPOSE_CMD if not set
-        if [ -z "$COMPOSE_CMD" ]; then # Check if COMPOSE_CMD is already set
-            if [ "$(id -u)" -ne 0 ]; then
-                SUDO_CMD="sudo"
-            else
-                SUDO_CMD=""
-            fi
-            if [ -f /etc/os-release ]; then
-                . /etc/os-release
-                OS_ID_TEMP=$ID # Use a temporary variable for OS_ID to avoid conflict if sourced multiple times
-                if [[ "$OS_ID_TEMP" == "ubuntu" || "$OS_ID_TEMP" == "debian" ]]; then
-                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
-                elif [[ "$OS_ID_TEMP" == "centos" || "$OS_ID_TEMP" == "rhel" || "$OS_ID_TEMP" == "fedora" ]]; then
-                    if [ -x "/usr/local/bin/docker-compose" ]; then # Check if the specific version was installed
-                        export COMPOSE_CMD="$SUDO_CMD /usr/local/bin/docker-compose"
-                    else
-                        export COMPOSE_CMD="$SUDO_CMD docker-compose" # Fallback to system default
-                    fi
-                else # Fallback for other OS types
-                    export COMPOSE_CMD="$SUDO_CMD docker-compose"
-                fi
-            else # Fallback if /etc/os-release is not found
-                 export COMPOSE_CMD="$SUDO_CMD docker-compose"
-            fi
-        fi
-        return
-    fi
-
-    echo "--- Checking and installing required system dependencies... ---"
-    
-    # Determine sudo command
-    if [ "$(id -u)" -ne 0 ]; then
-        SUDO_CMD="sudo"
-    else
-        SUDO_CMD=""
-    fi
-
-    # Detect OS and set compose command
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        OS_ID=$ID
-    else
-        echo -e "${RED}Cannot determine OS. Please install dependencies manually: docker, docker-compose, curl, unzip.${NC}"
-        exit 1
-    fi
-
-    echo "Detected OS: $OS_ID"
-
-    case "$OS_ID" in
-        ubuntu|debian)
-            echo "Updating package list..."
-            $SUDO_CMD apt-get update -y
-            echo "Installing dependencies: docker.io, docker-compose, curl, unzip..."
-            $SUDO_CMD apt-get install -y docker.io docker-compose curl unzip
-            export COMPOSE_CMD="$SUDO_CMD docker-compose"
-            ;;
-        centos|rhel|fedora)
-            echo "Installing dependencies using yum/dnf..."
-            $SUDO_CMD yum install -y yum-utils
-            $SUDO_CMD yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-            $SUDO_CMD yum install -y docker-ce docker-ce-cli containerd.io curl unzip
-            
-            echo "Installing Docker Compose ${DOCKER_COMPOSE_VERSION_RHEL_FEDORA}..."
-            $SUDO_CMD curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION_RHEL_FEDORA}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            if [ $? -ne 0 ]; then
-                echo -e "${RED}Error: Failed to download Docker Compose version ${DOCKER_COMPOSE_VERSION_RHEL_FEDORA}.${NC}"
-                echo -e "${RED}Please check the version in the script or your internet connection.${NC}"
-                exit 1
-            fi
-            $SUDO_CMD chmod +x /usr/local/bin/docker-compose
-            COMPOSE_CMD="$SUDO_CMD /usr/local/bin/docker-compose"
-            ;;
-        *)
-            echo -e "${RED}Unsupported OS: $OS_ID. Please install dependencies manually: docker, docker-compose, curl, unzip.${NC}"
-            exit 1
-            ;;
-    esac
-
-    echo "Starting and enabling Docker service..."
-    $SUDO_CMD systemctl start docker
-    $SUDO_CMD systemctl enable docker
-
-    echo -e "${GREEN}--- All dependencies are installed and configured. ---${NC}"
-
-    # Create the marker file after successful installation
-    echo "Creating dependency marker file: ${DEPS_MARKER_FILE}"
-    touch "${DEPS_MARKER_FILE}"
-}
-
-# Function to update the system: pull git changes, rebuild and restart services
-update_system() {
-    echo -e "${YELLOW}--- Starting System Update ---${NC}"
-
-    # Check if this is a git repository
-    if [ ! -d ".git" ]; then
-        echo -e "${RED}Error: This does not appear to be a git repository.${NC}"
-        echo -e "${YELLOW}The update command currently only supports updating via git.${NC}"
-        exit 1
-    fi
-
-    # 1. Pull latest changes from git
-    echo "Attempting to pull latest changes from git repository (fast-forward only)..."
-    if git pull --ff-only; then
-        echo -e "${GREEN}Successfully pulled latest changes from git.${NC}"
-    else
-        echo -e "${RED}Error: Failed to pull changes from git repository.${NC}"
-        echo -e "${YELLOW}This might be due to local changes conflicting with remote changes, or other git issues.${NC}"
-        echo -e "${YELLOW}Please resolve any git conflicts manually or stash your local changes, then try updating again.${NC}"
-        echo -e "${YELLOW}Alternatively, if you are sure, you can try a standard 'git pull' manually and then re-run './setup.sh update' skipping the pull part (not implemented yet).${NC}"
-        exit 1
-    fi
-
-    # 2. Ensure SDK is present before rebuilding
-    echo "Ensuring Dahua NetSDK .whl file is available for build..."
-    handle_sdk # Ensure the .whl file is in ./app/
-
-    # 3. Rebuild docker images
-    echo "Rebuilding Docker images if necessary..."
-    if $COMPOSE_CMD build; then
-        echo -e "${GREEN}Docker images rebuilt successfully.${NC}"
-    else
-        echo -e "${RED}Error: Failed to rebuild Docker images.${NC}"
-        echo -e "${YELLOW}Please check the output above for any Docker build errors.${NC}"
-        exit 1
-    fi
-
-    # 4. Restart services with new images
-    echo "Restarting Docker services..."
-    # Using 'up -d' will recreate containers if their image or configuration has changed.
-    # '--remove-orphans' cleans up any services removed from the compose file.
-    if $COMPOSE_CMD up -d --remove-orphans; then
-        echo -e "${GREEN}Docker services restarted successfully with updated images/configurations.${NC}"
-    else
-        echo -e "${RED}Error: Failed to restart Docker services.${NC}"
-        echo -e "${YELLOW}Please check the output above for any errors.${NC}"
-        exit 1
-    fi
-
-    echo -e "${GREEN}--- System Update Completed Successfully ---${NC}"
 }
 
 # Function to handle SDK download and preparation
@@ -254,6 +105,117 @@ handle_sdk() {
     echo -e "${GREEN}--- SDK has been successfully prepared in ${APP_DIR}. ---${NC}"
 }
 
+# Function to install system dependencies
+install_dependencies() {
+    # Check if we've already installed dependencies (using marker file)
+    if [ -f "$DEPS_MARKER_FILE" ]; then
+        # Dependencies already checked, just set COMPOSE_CMD
+        if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+            COMPOSE_CMD="docker compose"
+        elif command -v docker-compose &>/dev/null; then
+            COMPOSE_CMD="docker-compose"
+        else
+            echo -e "${RED}Error: Neither 'docker compose' nor 'docker-compose' found.${NC}"
+            exit 1
+        fi
+        return
+    fi
+
+    echo "--- Checking system dependencies... ---"
+    
+    # Ensure LOG_DIR_HOST exists for marker file
+    mkdir -p "${LOG_DIR_HOST}"
+    
+    # Check for Docker
+    if ! command -v docker &>/dev/null; then
+        echo -e "${RED}Error: Docker is not installed.${NC}"
+        echo "Please install Docker first. Visit: https://docs.docker.com/get-docker/"
+        exit 1
+    fi
+    
+    # Check for Docker Compose (plugin or standalone)
+    if docker compose version &>/dev/null 2>&1; then
+        COMPOSE_CMD="docker compose"
+        echo -e "${GREEN}Found Docker Compose (plugin): $(docker compose version)${NC}"
+    elif command -v docker-compose &>/dev/null; then
+        COMPOSE_CMD="docker-compose"
+        echo -e "${GREEN}Found Docker Compose (standalone): $(docker-compose version)${NC}"
+    else
+        echo -e "${RED}Error: Docker Compose is not installed.${NC}"
+        echo "Please install Docker Compose. Visit: https://docs.docker.com/compose/install/"
+        exit 1
+    fi
+    
+    # Check for curl
+    if ! command -v curl &>/dev/null; then
+        echo -e "${RED}Error: curl is not installed.${NC}"
+        echo "Please install curl: sudo apt-get install curl (Debian/Ubuntu) or sudo yum install curl (RHEL/CentOS)"
+        exit 1
+    fi
+    
+    # Check for unzip
+    if ! command -v unzip &>/dev/null; then
+        echo -e "${RED}Error: unzip is not installed.${NC}"
+        echo "Please install unzip: sudo apt-get install unzip (Debian/Ubuntu) or sudo yum install unzip (RHEL/CentOS)"
+        exit 1
+    fi
+    
+    # Create marker file to skip this check next time
+    touch "$DEPS_MARKER_FILE"
+    echo -e "${GREEN}--- All system dependencies are present. ---${NC}"
+}
+
+# Function to update the system
+update_system() {
+    echo "--- Starting System Update Process ---"
+
+    # Check if this is a git repository
+    if [ ! -d ".git" ]; then
+        echo -e "${RED}Error: This does not appear to be a git repository.${NC}"
+        echo -e "${YELLOW}The update command currently only supports updating via git.${NC}"
+        exit 1
+    fi
+
+    # 1. Pull latest changes from git
+    echo "Attempting to pull latest changes from git repository (fast-forward only)..."
+    if git pull --ff-only; then
+        echo -e "${GREEN}Successfully pulled latest changes from git.${NC}"
+    else
+        echo -e "${RED}Error: Failed to pull changes from git repository.${NC}"
+        echo -e "${YELLOW}This might be due to local changes conflicting with remote changes, or other git issues.${NC}"
+        echo -e "${YELLOW}Please resolve any git conflicts manually or stash your local changes, then try updating again.${NC}"
+        exit 1
+    fi
+
+    # 2. Ensure SDK is present before rebuilding
+    echo "Ensuring Dahua NetSDK .whl file is available for build..."
+    handle_sdk # Ensure the .whl file is in ./app/
+
+    # 3. Rebuild docker images
+    echo "Rebuilding Docker images if necessary..."
+    if $COMPOSE_CMD build; then
+        echo -e "${GREEN}Docker images rebuilt successfully.${NC}"
+    else
+        echo -e "${RED}Error: Failed to rebuild Docker images.${NC}"
+        echo -e "${YELLOW}Please check the output above for any Docker build errors.${NC}"
+        exit 1
+    fi
+
+    # 4. Restart services with new images
+    echo "Restarting Docker services..."
+    # Using 'up -d' will recreate containers if their image or configuration has changed.
+    # '--remove-orphans' cleans up any services removed from the compose file.
+    if $COMPOSE_CMD up -d --remove-orphans; then
+        echo -e "${GREEN}Docker services restarted successfully with updated images/configurations.${NC}"
+    else
+        echo -e "${RED}Error: Failed to restart Docker services.${NC}"
+        echo -e "${YELLOW}Please check the output above for any errors.${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}--- System Update Completed Successfully ---${NC}"
+}
+
 # Function to handle the creation of config files from examples
 handle_config_creation() {
     echo "--- Checking for configuration files... ---"
@@ -302,6 +264,137 @@ handle_config_creation() {
     echo -e "${GREEN}--- Configuration files are present. ---${NC}"
 }
 
+# Function to setup admin user if not exists
+setup_admin_user() {
+    echo "--- Checking for admin user... ---"
+    
+    # Check if anpr-web container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^anpr-web$"; then
+        echo -e "${YELLOW}Web container not running yet. Admin user setup will be skipped for now.${NC}"
+        echo -e "${YELLOW}You can create users later using: docker exec -it anpr-web python app/user_manager.py${NC}"
+        return
+    fi
+    
+    # Check if any users exist
+    USER_COUNT=$(docker exec anpr-web python -c "
+from app.models import db, User
+from app.anpr_web import app
+with app.app_context():
+    print(User.query.count())
+" 2>/dev/null || echo "0")
+    
+    if [ "$USER_COUNT" -gt 0 ]; then
+        echo -e "${GREEN}Admin user already exists. Skipping user creation.${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}No admin user found. Let's create the first admin user.${NC}"
+    read -p "Enter admin username: " ADMIN_USERNAME
+    
+    if [ -z "$ADMIN_USERNAME" ]; then
+        echo -e "${RED}Username cannot be empty. Skipping admin user creation.${NC}"
+        return
+    fi
+    
+    # Password validation loop
+    while true; do
+        read -s -p "Enter admin password (min 10 chars, 1 uppercase, 1 number, 1 special char): " ADMIN_PASSWORD
+        echo
+        read -s -p "Confirm password: " ADMIN_PASSWORD_CONFIRM
+        echo
+        
+        if [ "$ADMIN_PASSWORD" != "$ADMIN_PASSWORD_CONFIRM" ]; then
+            echo -e "${RED}Passwords do not match. Please try again.${NC}"
+            continue
+        fi
+        
+        # Validate password strength
+        if [ ${#ADMIN_PASSWORD} -lt 10 ]; then
+            echo -e "${RED}Password must be at least 10 characters long.${NC}"
+            continue
+        fi
+        
+        if ! echo "$ADMIN_PASSWORD" | grep -q '[A-Z]'; then
+            echo -e "${RED}Password must contain at least one uppercase letter.${NC}"
+            continue
+        fi
+        
+        if ! echo "$ADMIN_PASSWORD" | grep -q '[0-9]'; then
+            echo -e "${RED}Password must contain at least one number.${NC}"
+            continue
+        fi
+        
+        if ! echo "$ADMIN_PASSWORD" | grep -q '[!@#$%^&*(),.?:{}|<>~`]'; then
+            echo -e "${RED}Password must contain at least one special character.${NC}"
+            continue
+        fi
+        
+        break
+    done
+    
+    # Create the user
+    echo "Creating admin user..."
+    docker exec anpr-web python -c "
+from app.models import db, User
+from app.anpr_web import app
+with app.app_context():
+    user = User(username='$ADMIN_USERNAME')
+    user.set_password('$ADMIN_PASSWORD')
+    db.session.add(user)
+    db.session.commit()
+    print('Admin user created successfully!')
+" 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Admin user '$ADMIN_USERNAME' created successfully!${NC}"
+    else
+        echo -e "${RED}Failed to create admin user. You can create it manually later using:${NC}"
+        echo -e "${YELLOW}docker exec -it anpr-web python app/user_manager.py${NC}"
+    fi
+}
+
+# Function to setup Cloudflare token
+setup_cloudflare_token() {
+    echo "--- Checking Cloudflare tunnel configuration... ---"
+    
+    # Check if CLOUDFLARE_TOKEN is already set in .env
+    if grep -q "^CLOUDFLARE_TOKEN=.\+" "$ENV_FILE" 2>/dev/null; then
+        echo -e "${GREEN}Cloudflare token is already configured.${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}Cloudflare tunnel token is not configured.${NC}"
+    read -p "Do you want to configure Cloudflare tunnel now? (y/n) " -n 1 -r
+    echo
+    
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Skipping Cloudflare configuration. The tunnel service will not work.${NC}"
+        echo -e "${YELLOW}You can add it later by editing .env and adding: CLOUDFLARE_TOKEN=your_token${NC}"
+        return
+    fi
+    
+    read -p "Enter your Cloudflare tunnel token: " CF_TOKEN
+    
+    if [ -z "$CF_TOKEN" ]; then
+        echo -e "${YELLOW}No token provided. Skipping Cloudflare configuration.${NC}"
+        return
+    fi
+    
+    # Add or update CLOUDFLARE_TOKEN in .env
+    if grep -q "^CLOUDFLARE_TOKEN=" "$ENV_FILE" 2>/dev/null; then
+        # Update existing line
+        sed -i "s|^CLOUDFLARE_TOKEN=.*|CLOUDFLARE_TOKEN=$CF_TOKEN|" "$ENV_FILE"
+    else
+        # Add new line
+        echo "" >> "$ENV_FILE"
+        echo "# Cloudflare Tunnel Configuration" >> "$ENV_FILE"
+        echo "CLOUDFLARE_TOKEN=$CF_TOKEN" >> "$ENV_FILE"
+    fi
+    
+    echo -e "${GREEN}Cloudflare token configured successfully!${NC}"
+    echo -e "${YELLOW}Note: You'll need to restart services for the tunnel to start working.${NC}"
+}
+
 # --- Main Script Logic ---
 
 # Default to 'usage' if no command is given
@@ -311,6 +404,7 @@ case $COMMAND in
     start)
         install_dependencies
         handle_config_creation
+        setup_cloudflare_token
         handle_sdk
         echo "--- Creating required host directories... ---"
         # LOG_DIR_HOST is already created by install_dependencies if marker was absent
@@ -331,6 +425,10 @@ case $COMMAND in
         echo "--- Building and starting services... ---"
         $COMPOSE_CMD up --build -d
         echo -e "${GREEN}--- Services started successfully. ---${NC}"
+        
+        # Setup admin user after services are running
+        setup_admin_user
+        
         echo -e "${YELLOW}Use './setup.sh logs' to monitor.${NC}"
         ;;
     stop)

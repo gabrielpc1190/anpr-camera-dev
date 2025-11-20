@@ -1,115 +1,112 @@
-import os, logging, sys
+import os
 import requests
-from flask import Flask, jsonify, request, send_from_directory, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from app.models import db, User
 
-import configparser
-
-# --- Flask App Initialization ---
 app = Flask(__name__)
 
 # --- Configuration ---
-config = configparser.ConfigParser(interpolation=None)
-config.read('/app/config.ini')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key_please_change_in_prod')
+app.config['SQLALCHEMY_DATABASE_URI'] = (
+    f"mysql+mysqlconnector://{os.getenv('MYSQL_USER', 'anpr_user')}:"
+    f"{os.getenv('MYSQL_PASSWORD')}@"
+    f"{os.getenv('DB_HOST', 'mariadb')}/"
+    f"{os.getenv('MYSQL_DATABASE', 'anpr_events')}"
+)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-IMAGE_DIR = os.getenv('IMAGE_DIR', '/app/anpr_images')
-DB_MANAGER_API_URL = os.getenv('DB_MANAGER_API_URL', 'http://anpr-db-manager:5001')
-LOG_DIR = os.getenv('LOG_DIR', '/app/logs')
-LOG_FILE = os.path.join(LOG_DIR, 'anpr_web.log')
+# DB Manager API URL
+DB_MANAGER_API_URL = os.getenv('DB_MANAGER_API_URL', 'http://localhost:5001')
 
-os.makedirs(LOG_DIR, exist_ok=True)
+# --- Initialize Extensions ---
+db.init_app(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
 
-# --- Logging Setup ---
-LOG_LEVEL_MAP = {
-    '0': logging.ERROR, '1': logging.WARNING, '2': logging.INFO, '3': logging.DEBUG
-}
-log_level_str = config.get('General', 'LogLevel', fallback='2')
-log_level = LOG_LEVEL_MAP.get(log_level_str, logging.INFO)
+# --- User Loader ---
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
-log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] [%(module)s:%(funcName)s:%(lineno)d] %(message)s')
-file_handler = logging.FileHandler(LOG_FILE)
-file_handler.setFormatter(log_formatter)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(log_formatter)
-logger = logging.getLogger(__name__)
-app.logger.handlers = []; app.logger.propagate = False
-for handler in [file_handler, console_handler]:
-    logger.addHandler(handler)
-    app.logger.addHandler(handler)
-logger.setLevel(log_level)
-app.logger.setLevel(log_level)
+# --- Routes ---
 
-# --- API Endpoints (Proxy to anpr_db_manager) ---
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Public health check endpoint."""
+    return jsonify({"status": "healthy"}), 200
 
-@app.route('/api/events', methods=['GET'])
-def proxy_events():
-    query_params = request.query_string.decode('utf-8')
-    try:
-        backend_response = requests.get(f"{DB_MANAGER_API_URL}/api/events?{query_params}", timeout=10)
-        backend_response.raise_for_status()
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = User.query.filter_by(username=username).first()
         
-        data = backend_response.json()
-        response = jsonify(data)
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '-1'
-        return response, backend_response.status_code
+        if user and user.check_password(password):
+            login_user(user)
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
+        else:
+            flash('Invalid username or password')
+            
+    return render_template('login.html')
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error proxying /api/events to db_manager: {e}")
-        abort(502, description="Error connecting to the database service.")
-
-@app.route('/api/cameras', methods=['GET'])
-def proxy_cameras():
-    try:
-        backend_response = requests.get(f"{DB_MANAGER_API_URL}/api/cameras", timeout=5)
-        backend_response.raise_for_status()
-
-        data = backend_response.json()
-        response = jsonify(data)
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '-1'
-        return response, backend_response.status_code
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error proxying /api/cameras to db_manager: {e}")
-        abort(502, description="Error connecting to the database service.")
-
-@app.route('/api/events/latest_timestamp', methods=['GET'])
-def proxy_latest_timestamp():
-    query_params = request.query_string.decode('utf-8')
-    try:
-        backend_response = requests.get(f"{DB_MANAGER_API_URL}/api/events/latest_timestamp?{query_params}", timeout=5)
-        backend_response.raise_for_status()
-
-        data = backend_response.json()
-        response = jsonify(data)
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '-1'
-        return response, backend_response.status_code
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error proxying /api/events/latest_timestamp to db_manager: {e}")
-        abort(502, description="Error connecting to the database service.")
-
-# --- Static File Serving ---
-
-@app.route('/images/<path:filename>')
-def serve_image(filename):
-    if '..' in filename or filename.startswith('/'):
-        abort(404)
-    return send_from_directory(IMAGE_DIR, filename)
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
 
 @app.route('/')
+@login_required
 def index():
-    return send_from_directory('templates', 'index.html')
+    return render_template('index.html')
 
-# --- Health Check ---
+# --- API Proxy Routes ---
 
-@app.route('/health')
-def health_check():
-    return jsonify({"status": "healthy"}), 200
+@app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+@login_required
+def api_proxy(path):
+    """Proxy API requests to the DB Manager service."""
+    url = f"{DB_MANAGER_API_URL}/api/{path}"
+    
+    # Forward query parameters
+    if request.query_string:
+        url += f"?{request.query_string.decode('utf-8')}"
+    
+    try:
+        # Forward the request to DB Manager
+        if request.method == 'GET':
+            response = requests.get(url, timeout=10)
+        elif request.method == 'POST':
+            response = requests.post(url, json=request.get_json(), timeout=10)
+        elif request.method == 'PUT':
+            response = requests.put(url, json=request.get_json(), timeout=10)
+        elif request.method == 'DELETE':
+            response = requests.delete(url, timeout=10)
+        
+        # Return the response from DB Manager
+        return response.content, response.status_code, {'Content-Type': response.headers.get('Content-Type', 'application/json')}
+    
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Failed to connect to DB Manager: {str(e)}"}), 503
+
+@app.route('/images/<path:filename>')
+@login_required
+def serve_image(filename):
+    """Serve images from the anpr_images directory."""
+    images_dir = '/app/anpr_images'
+    return send_from_directory(images_dir, filename)
+
+# --- Database Initialization ---
+with app.app_context():
+    # Create tables if they don't exist (specifically the 'user' table)
+    db.create_all()
 
 if __name__ == '__main__':
     server_port = int(os.getenv('FLASK_RUN_PORT', 5000))

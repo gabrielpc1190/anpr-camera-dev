@@ -101,3 +101,29 @@ This section documents common problems and their solutions.
 *   **Cause 1**: The camera is not configured to analyze and send this data. The corresponding IVS (Intelligent Video System) rules must be activated in the camera's web interface.
 *   **Cause 2**: The Python script is looking for an incorrect field name in the data sent by the SDK.
 *   **Solution**: Debug logs and SDK files were analyzed to identify the correct field names (`szDrivingDirection`, `szObjectType`, etc.), and fallback logic was implemented in `anpr_listener.py` to ensure that data is captured from the most reliable available source.
+
+## 8. Authentication and User Management
+
+The system includes an authentication module to protect access to the web interface (`anpr-web`).
+
+### Features
+*   **Route Protection**: All routes except `/login` and `/health` require authentication.
+*   **Secure Storage**: Passwords are stored as hashes using `bcrypt`.
+*   **User Management**: A utility script `app/user_manager.py` is provided to manage users from the command line.
+
+### User Management (CLI)
+To manage users, run the `user_manager.py` script (may require being inside the container or having environment variables set):
+
+```bash
+# From the host (if you have access to the DB)
+python app/user_manager.py
+
+# Or from inside the anpr-web container
+docker exec -it anpr-web python app/user_manager.py
+```
+
+The interactive menu allows you to:
+1.  List users.
+2.  Add user (with strong password validation).
+3.  Remove user.
+4.  Reset password.
