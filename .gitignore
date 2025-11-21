@@ -20,6 +20,7 @@ Thumbs.db
 
 # Application Specific
 app/anpr_images/
+logs
 app/logs/
 config.ini
 *.whl
