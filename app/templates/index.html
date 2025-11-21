@@ -1,23 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ANPR Event Viewer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <script src="{{ url_for('static', filename='tailwind.js') }}"></script>
     <style>
         /* Custom scrollbar for webkit browsers */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #555; }
-        body { font-family: 'Inter', sans-serif; }
-        .event-row { opacity: 0; animation: fadeIn 0.5s forwards; }
-        @keyframes fadeIn { to { opacity: 1; } }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .event-row {
+            opacity: 0;
+            animation: fadeIn 0.5s forwards;
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
     </style>
-    <link rel="preconnect" href="https://rsms.me/">
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='inter.css') }}">
 </head>
+
 <body class="bg-gray-100 text-gray-800">
     <div class="container mx-auto p-4">
         <header class="bg-blue-600 text-white p-6 rounded-lg shadow-md mb-8">
@@ -26,11 +52,13 @@
 
         <div class="mb-6 p-6 bg-white rounded-lg shadow-md">
             <form id="filterForm" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                <input type="text" id="plate_number" name="plate_number" placeholder="Plate Number" class="p-2 border rounded">
+                <input type="text" id="plate_number" name="plate_number" placeholder="Plate Number"
+                    class="p-2 border rounded">
                 <select id="camera_id" name="camera_id" class="p-2 border rounded">
                     <option value="">All Cameras</option>
                 </select>
-                <input type="text" name="vehicle_type" placeholder="Vehicle Type (e.g., Vehicle)" class="p-2 border rounded">
+                <input type="text" name="vehicle_type" placeholder="Vehicle Type (e.g., Vehicle)"
+                    class="p-2 border rounded">
                 <select name="access_status" class="p-2 border rounded">
                     <option value="">All Statuses</option>
                     <option value="Normal Car">Normal Car</option>
@@ -45,13 +73,16 @@
                 <input type="date" name="start_date" class="p-2 border rounded">
                 <input type="date" name="end_date" class="p-2 border rounded">
                 <div class="col-span-full flex justify-end space-x-2">
-                    <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">Search</button>
-                    <button type="reset" id="resetButton" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg">Reset</button>
+                    <button type="submit"
+                        class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">Search</button>
+                    <button type="reset" id="resetButton"
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg">Reset</button>
                 </div>
             </form>
         </div>
 
-        <div id="new-events-notification" class="hidden fixed top-4 left-1/2 -translate-x-1/2 bg-blue-500 text-white py-2 px-4 rounded-lg shadow-lg cursor-pointer hover:bg-blue-600 transition-all">
+        <div id="new-events-notification"
+            class="hidden fixed top-4 left-1/2 -translate-x-1/2 bg-blue-500 text-white py-2 px-4 rounded-lg shadow-lg cursor-pointer hover:bg-blue-600 transition-all">
             New events available. Click to refresh.
         </div>
 
@@ -59,26 +90,49 @@
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plate Number</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Access Status</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle Type</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle Color</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Direction</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Camera ID</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Image</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Timestamp</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Plate Number</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Access Status</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Vehicle Type</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Vehicle Color</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Direction</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Camera ID</th>
                     </tr>
                 </thead>
                 <tbody id="eventsTableBody" class="bg-white divide-y divide-gray-200">
-                    <tr><td colspan="8" class="text-center p-4 text-gray-500">Loading events...</td></tr>
+                    <tr>
+                        <td colspan="8" class="text-center p-4 text-gray-500">Loading events...</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
 
-        <div id="paginationControls" class="mt-6 p-4 bg-white rounded-lg shadow-md flex flex-col sm:flex-row justify-between items-center">
-            <button id="prevButton" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors mb-2 sm:mb-0" disabled>Previous</button>
+        <div id="paginationControls"
+            class="mt-6 p-4 bg-white rounded-lg shadow-md flex flex-col sm:flex-row justify-between items-center">
+            <button id="prevButton"
+                class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors mb-2 sm:mb-0"
+                disabled>Previous</button>
             <div id="pageInfo" class="text-sm text-gray-700 mb-2 sm:mb-0">Page 1 of 1</div>
-            <button id="nextButton" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors" disabled>Next</button>
+            <button id="nextButton"
+                class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors"
+                disabled>Next</button>
         </div>
     </div>
 
@@ -133,13 +187,13 @@
 
         async function fetchEvents(page = 1, filters = new URLSearchParams()) {
             eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-gray-500"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>Loading events...</td></tr>';
-            
+
             const params = new URLSearchParams(filters);
             params.set('page', page);
             params.set('limit', eventsPerPage);
 
             const data = await fetchApiData(`/api/events?${params.toString()}`);
-            
+
             if (data) {
                 currentPage = data.current_page;
                 totalPages = data.total_pages;
@@ -170,7 +224,7 @@
                 const sanitize = str => str ? String(str).replace(/</g, "&lt;").replace(/>/g, "&gt;") : 'N/A';
                 const imageUrl = event.image_filename ? `/images/${event.image_filename}` : '#';
                 const processedData = event.processed_data || {};
-                
+
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap">
                         ${event.image_filename ? `<a href="${imageUrl}" target="_blank" title="Click to view full image"><img src="${imageUrl}" alt="Plate ${sanitize(event.plate_number)}" class="h-16 w-24 object-cover rounded-md shadow-sm hover:shadow-lg transition-shadow"></a>` : 'No Image'}
@@ -228,7 +282,7 @@
             currentPage = 1;
             fetchEvents(currentPage, currentFilters);
         });
-        
+
         resetButton.addEventListener('click', () => {
             filterForm.reset();
             currentFilters = new URLSearchParams();
@@ -251,4 +305,5 @@
         });
     </script>
 </body>
+
 </html>

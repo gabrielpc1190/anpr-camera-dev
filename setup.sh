@@ -39,6 +39,9 @@ usage() {
     echo "  reconfigure  Stops services and prompts you to edit configuration files."
     echo "  update       Updates the system by pulling git changes, rebuilding images, and restarting services."
     echo "  reset-admin  Interactively resets the password for an existing admin user."
+    echo "  create-user  Interactively creates a new user."
+    echo "  delete-user  Interactively deletes an existing user."
+    echo "  rebuild      Rebuilds all containers."
     echo
 }
 
@@ -479,6 +482,210 @@ with app.app_context():
     fi
 }
 
+# Function to create a new user
+create_user() {
+    echo "--- Creating a new user... ---"
+
+    # Check if anpr-web container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^anpr-web$"; then
+        echo -e "${RED}Error: Web container (anpr-web) is not running.${NC}"
+        echo -e "${YELLOW}Please start the services first using: ./setup.sh start${NC}"
+        return
+    fi
+
+    # List existing users
+    echo "Fetching existing users..."
+    USERS_JSON=$(docker exec anpr-web python -c "
+from app.models import db, User
+from app.anpr_web import app
+import json
+with app.app_context():
+    users = User.query.all()
+    user_list = [{'id': u.id, 'username': u.username} for u in users]
+    print(json.dumps(user_list))
+" 2>/dev/null)
+
+    if [ -n "$USERS_JSON" ] && [ "$USERS_JSON" != "[]" ]; then
+        echo -e "${GREEN}Existing Users:${NC}"
+        echo "$USERS_JSON" | python3 -c "
+import sys, json
+users = json.load(sys.stdin)
+for u in users:
+    print(f\"  ID: {u['id']} - Username: {u['username']}\")
+"
+    fi
+
+    echo
+    read -p "Enter new username: " NEW_USERNAME
+
+    if [ -z "$NEW_USERNAME" ]; then
+        echo -e "${RED}Username cannot be empty.${NC}"
+        return
+    fi
+
+    # Password validation loop
+    while true; do
+        read -s -p "Enter password (min 10 chars, 1 uppercase, 1 number, 1 special char): " NEW_PASSWORD
+        echo
+        read -s -p "Confirm password: " NEW_PASSWORD_CONFIRM
+        echo
+
+        if [ "$NEW_PASSWORD" != "$NEW_PASSWORD_CONFIRM" ]; then
+            echo -e "${RED}Passwords do not match. Please try again.${NC}"
+            continue
+        fi
+
+        # Validate password strength
+        if [ ${#NEW_PASSWORD} -lt 10 ]; then
+            echo -e "${RED}Password must be at least 10 characters long.${NC}"
+            continue
+        fi
+
+        if ! echo "$NEW_PASSWORD" | grep -q '[A-Z]'; then
+            echo -e "${RED}Password must contain at least one uppercase letter.${NC}"
+            continue
+        fi
+
+        if ! echo "$NEW_PASSWORD" | grep -q '[0-9]'; then
+            echo -e "${RED}Password must contain at least one number.${NC}"
+            continue
+        fi
+
+        if ! echo "$NEW_PASSWORD" | grep -q '[!@#$%^&*(),.?:{}|<>~`]'; then
+            echo -e "${RED}Password must contain at least one special character.${NC}"
+            continue
+        fi
+
+        break
+    done
+
+    echo "Creating user..."
+    CREATE_COMMAND="
+from app.models import db, User
+from app.anpr_web import app
+import sys
+
+with app.app_context():
+    existing_user = User.query.filter_by(username='$NEW_USERNAME').first()
+    if existing_user:
+        print(f'User {existing_user.username} already exists.', file=sys.stderr)
+        sys.exit(1)
+    user = User(username='$NEW_USERNAME')
+    user.set_password('$NEW_PASSWORD')
+    db.session.add(user)
+    db.session.commit()
+    print(f'User {user.username} created successfully!')
+"
+    docker exec anpr-web python -c "$CREATE_COMMAND"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}User created successfully!${NC}"
+    else
+        echo -e "${RED}Failed to create user.${NC}"
+    fi
+}
+
+# Function to delete a user
+delete_user() {
+    echo "--- Deleting a user... ---"
+
+    # Check if anpr-web container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^anpr-web$"; then
+        echo -e "${RED}Error: Web container (anpr-web) is not running.${NC}"
+        echo -e "${YELLOW}Please start the services first using: ./setup.sh start${NC}"
+        return
+    fi
+
+    # List users
+    echo "Fetching users..."
+    USERS_JSON=$(docker exec anpr-web python -c "
+from app.models import db, User
+from app.anpr_web import app
+import json
+with app.app_context():
+    users = User.query.all()
+    user_list = [{'id': u.id, 'username': u.username} for u in users]
+    print(json.dumps(user_list))
+" 2>/dev/null)
+
+    if [ -z "$USERS_JSON" ] || [ "$USERS_JSON" == "[]" ]; then
+        echo -e "${RED}No users found in the database.${NC}"
+        return
+    fi
+
+    # Parse and display users
+    echo -e "${GREEN}Available Users:${NC}"
+    echo "$USERS_JSON" | python3 -c "
+import sys, json
+users = json.load(sys.stdin)
+for u in users:
+    print(f\"  ID: {u['id']} - Username: {u['username']}\")
+"
+
+    echo
+    read -p "Enter the ID of the user you want to delete: " USER_ID
+
+    if [ -z "$USER_ID" ]; then
+        echo -e "${RED}User ID cannot be empty.${NC}"
+        return
+    fi
+
+    # Confirm deletion
+    read -p "Are you sure you want to delete this user? (yes/no): " CONFIRM
+    if [ "$CONFIRM" != "yes" ]; then
+        echo -e "${YELLOW}Deletion cancelled.${NC}"
+        return
+    fi
+
+    echo "Deleting user..."
+    DELETE_COMMAND="
+from app.models import db, User
+from app.anpr_web import app
+import sys
+
+with app.app_context():
+    user = db.session.get(User, $USER_ID)
+    if user:
+        username = user.username
+        db.session.delete(user)
+        db.session.commit()
+        print(f'User {username} deleted successfully!')
+    else:
+        print(f'User with ID $USER_ID not found.', file=sys.stderr)
+        sys.exit(1)
+"
+    docker exec anpr-web python -c "$DELETE_COMMAND"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}User deleted successfully!${NC}"
+    else
+        echo -e "${RED}Failed to delete user.${NC}"
+    fi
+}
+
+# Function to rebuild all containers
+rebuild_containers() {
+    echo "--- Rebuilding all containers... ---"
+    echo -e "${YELLOW}This will stop all services, rebuild containers, and restart them.${NC}"
+    read -p "Continue? (yes/no): " CONFIRM
+    
+    if [ "$CONFIRM" != "yes" ]; then
+        echo -e "${YELLOW}Rebuild cancelled.${NC}"
+        return
+    fi
+
+    echo "Stopping services..."
+    $COMPOSE_CMD down
+
+    echo "Rebuilding containers..."
+    $COMPOSE_CMD build
+
+    echo "Starting services..."
+    $COMPOSE_CMD up -d
+
+    echo -e "${GREEN}All containers rebuilt and restarted successfully!${NC}"
+}
+
 # Function to setup Cloudflare token
 setup_cloudflare_token() {
     echo "--- Checking Cloudflare tunnel configuration... ---"
@@ -643,6 +850,18 @@ case $COMMAND in
     reset-admin)
         install_dependencies
         reset_admin_user
+        ;;
+    create-user)
+        install_dependencies
+        create_user
+        ;;
+    delete-user)
+        install_dependencies
+        delete_user
+        ;;
+    rebuild)
+        install_dependencies
+        rebuild_containers
         ;;
     *)
         usage

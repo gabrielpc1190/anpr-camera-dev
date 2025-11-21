@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - ANPR System</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <style>
         :root {
             --primary-color: #2563eb;
@@ -70,7 +72,8 @@
             border: 1px solid var(--border-color);
             border-radius: 0.5rem;
             font-size: 1rem;
-            box-sizing: border-box; /* Ensures padding doesn't affect width */
+            box-sizing: border-box;
+            /* Ensures padding doesn't affect width */
             transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
         }
 
@@ -111,6 +114,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="login-container">
         <div class="login-header">
@@ -119,11 +123,11 @@
         </div>
 
         {% with messages = get_flashed_messages() %}
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-error">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
+        {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-error">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
         {% endwith %}
 
         <form method="POST" action="/login">
@@ -139,4 +143,5 @@
         </form>
     </div>
 </body>
+
 </html>

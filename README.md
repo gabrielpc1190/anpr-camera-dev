@@ -75,6 +75,18 @@ The project is managed through a helper script `setup.sh`.
     ```bash
     ./setup.sh reset-admin
     ```
+*   **To create a new user**:
+    ```bash
+    ./setup.sh create-user
+    ```
+*   **To delete an existing user**:
+    ```bash
+    ./setup.sh delete-user
+    ```
+*   **To rebuild all containers**:
+    ```bash
+    ./setup.sh rebuild
+    ```
 
 ## 6. System Resilience
 
@@ -113,30 +125,23 @@ The system includes an authentication module to protect access to the web interf
 ### Features
 *   **Route Protection**: All routes except `/login` and `/health` require authentication.
 *   **Secure Storage**: Passwords are stored as hashes using `bcrypt`.
-*   **User Management**: A utility script `app/user_manager.py` is provided to manage users from the command line.
 
-### User Management (CLI)
-To manage users, run the `user_manager.py` script (may require being inside the container or having environment variables set):
+### User Management
 
-```bash
-# From the host (if you have access to the DB)
-python app/user_manager.py
+Manage users through the `setup.sh` script:
 
-# Or from inside the anpr-web container
-docker exec -it anpr-web python app/user_manager.py
-```
-
-The interactive menu allows you to:
-1.  List users.
-2.  Add user (with strong password validation).
-3.  Remove user.
-4.  Reset password.
-
-### Quick Password Reset
-You can also reset the admin password directly using the setup script:
-```bash
-./setup.sh reset-admin
-```
+*   **Reset admin password**:
+    ```bash
+    ./setup.sh reset-admin
+    ```
+*   **Create a new user**:
+    ```bash
+    ./setup.sh create-user
+    ```
+*   **Delete a user**:
+    ```bash
+    ./setup.sh delete-user
+    ```
 
 ## 9. Cloudflare Tunnel Configuration
 If you are using Cloudflare Tunnel to expose the application, ensure that the service in the Cloudflare Zero Trust dashboard is pointing to `http://127.0.0.1:5000` (or `localhost:5000`) instead of `http://anpr-web:5000`.
