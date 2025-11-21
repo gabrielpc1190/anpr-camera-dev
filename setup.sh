@@ -332,18 +332,37 @@ with app.app_context():
         break
     done
     
-    # Create the user
+# Create the user
     echo "Creating admin user..."
-    docker exec anpr-web python -c "
+
+    # Comando de Python con reintentos para manejar la condición de carrera del DB
+    ADMIN_COMMAND="
 from app.models import db, User
 from app.anpr_web import app
-with app.app_context():
-    user = User(username='$ADMIN_USERNAME')
-    user.set_password('$ADMIN_PASSWORD')
-    db.session.add(user)
-    db.session.commit()
-    print('Admin user created successfully!')
-" 2>/dev/null
+import time, sys
+
+MAX_RETRIES = 5
+for i in range(MAX_RETRIES):
+    try:
+        with app.app_context():
+            # Intentamos crear el usuario
+            user = User(username='$ADMIN_USERNAME')
+            user.set_password('$ADMIN_PASSWORD')
+            db.session.add(user)
+            db.session.commit()
+            print('Admin user created successfully!')
+            sys.exit(0) # Éxito: salir con 0
+    except Exception as e:
+        if i < MAX_RETRIES - 1:
+            print(f'Database not ready or error occurred (attempt {i+1}/{MAX_RETRIES}). Retrying in 3 seconds...')
+            time.sleep(3)
+        else:
+            print(f'FATAL ERROR after {MAX_RETRIES} attempts: {e}', file=sys.stderr)
+            sys.exit(1) # Fallo: salir con 1
+"
+
+    # Ejecutar el comando sin suprimir errores (para visibilidad)
+    docker exec anpr-web python -c "$ADMIN_COMMAND"
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Admin user '$ADMIN_USERNAME' created successfully!${NC}"
