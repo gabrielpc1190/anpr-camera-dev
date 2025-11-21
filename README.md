@@ -71,6 +71,10 @@ The project is managed through a helper script `setup.sh`.
     ```bash
     ./setup.sh logs anpr-listener
     ```
+*   **To reset the admin password**:
+    ```bash
+    ./setup.sh reset-admin
+    ```
 
 ## 6. System Resilience
 
@@ -127,3 +131,13 @@ The interactive menu allows you to:
 2.  Add user (with strong password validation).
 3.  Remove user.
 4.  Reset password.
+
+### Quick Password Reset
+You can also reset the admin password directly using the setup script:
+```bash
+./setup.sh reset-admin
+```
+
+## 9. Cloudflare Tunnel Configuration
+If you are using Cloudflare Tunnel to expose the application, ensure that the service in the Cloudflare Zero Trust dashboard is pointing to `http://127.0.0.1:5000` (or `localhost:5000`) instead of `http://anpr-web:5000`.
+Because the services run in `network_mode: host`, the container hostname `anpr-web` is not resolvable.

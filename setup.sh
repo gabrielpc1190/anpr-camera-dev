@@ -38,6 +38,7 @@ usage() {
     echo "  clean [--force] Stops services and optionally deletes data from host volumes. Use --force to skip confirmation."
     echo "  reconfigure  Stops services and prompts you to edit configuration files."
     echo "  update       Updates the system by pulling git changes, rebuilding images, and restarting services."
+    echo "  reset-admin  Interactively resets the password for an existing admin user."
     echo
 }
 
@@ -372,6 +373,112 @@ for i in range(MAX_RETRIES):
     fi
 }
 
+# Function to reset admin user password
+reset_admin_user() {
+    echo "--- Resetting admin user password... ---"
+
+    # Check if anpr-web container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^anpr-web$"; then
+        echo -e "${RED}Error: Web container (anpr-web) is not running.${NC}"
+        echo -e "${YELLOW}Please start the services first using: ./setup.sh start${NC}"
+        return
+    fi
+
+    # List users
+    echo "Fetching users..."
+    USERS_JSON=$(docker exec anpr-web python -c "
+from app.models import db, User
+from app.anpr_web import app
+import json
+with app.app_context():
+    users = User.query.all()
+    user_list = [{'id': u.id, 'username': u.username} for u in users]
+    print(json.dumps(user_list))
+" 2>/dev/null)
+
+    if [ -z "$USERS_JSON" ] || [ "$USERS_JSON" == "[]" ]; then
+        echo -e "${RED}No users found in the database.${NC}"
+        return
+    fi
+
+    # Parse and display users (using python for reliable json parsing)
+    echo -e "${GREEN}Available Users:${NC}"
+    echo "$USERS_JSON" | python3 -c "
+import sys, json
+users = json.load(sys.stdin)
+for u in users:
+    print(f\"  ID: {u['id']} - Username: {u['username']}\")
+"
+
+    echo
+    read -p "Enter the ID of the user you want to reset: " USER_ID
+
+    if [ -z "$USER_ID" ]; then
+        echo -e "${RED}User ID cannot be empty.${NC}"
+        return
+    fi
+
+    # Password validation loop
+    while true; do
+        read -s -p "Enter new password (min 10 chars, 1 uppercase, 1 number, 1 special char): " NEW_PASSWORD
+        echo
+        read -s -p "Confirm new password: " NEW_PASSWORD_CONFIRM
+        echo
+
+        if [ "$NEW_PASSWORD" != "$NEW_PASSWORD_CONFIRM" ]; then
+            echo -e "${RED}Passwords do not match. Please try again.${NC}"
+            continue
+        fi
+
+        # Validate password strength
+        if [ ${#NEW_PASSWORD} -lt 10 ]; then
+            echo -e "${RED}Password must be at least 10 characters long.${NC}"
+            continue
+        fi
+
+        if ! echo "$NEW_PASSWORD" | grep -q '[A-Z]'; then
+            echo -e "${RED}Password must contain at least one uppercase letter.${NC}"
+            continue
+        fi
+
+        if ! echo "$NEW_PASSWORD" | grep -q '[0-9]'; then
+            echo -e "${RED}Password must contain at least one number.${NC}"
+            continue
+        fi
+
+        if ! echo "$NEW_PASSWORD" | grep -q '[!@#$%^&*(),.?:{}|<>~`]'; then
+            echo -e "${RED}Password must contain at least one special character.${NC}"
+            continue
+        fi
+
+        break
+    done
+
+    echo "Updating password..."
+    UPDATE_COMMAND="
+from app.models import db, User
+from app.anpr_web import app
+import sys
+
+with app.app_context():
+    user = db.session.get(User, $USER_ID)
+    if user:
+        user.set_password('$NEW_PASSWORD')
+        db.session.commit()
+        print(f'Password for user {user.username} updated successfully!')
+    else:
+        print(f'User with ID $USER_ID not found.', file=sys.stderr)
+        sys.exit(1)
+"
+    docker exec anpr-web python -c "$UPDATE_COMMAND"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Password reset successfully!${NC}"
+    else
+        echo -e "${RED}Failed to reset password.${NC}"
+    fi
+}
+
 # Function to setup Cloudflare token
 setup_cloudflare_token() {
     echo "--- Checking Cloudflare tunnel configuration... ---"
@@ -532,6 +639,10 @@ case $COMMAND in
     update)
         install_dependencies # Ensure docker-compose is available
         update_system # Call the actual update logic
+        ;;
+    reset-admin)
+        install_dependencies
+        reset_admin_user
         ;;
     *)
         usage
