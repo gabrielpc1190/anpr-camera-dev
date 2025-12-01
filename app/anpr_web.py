@@ -3,6 +3,7 @@ import requests
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from app.models import db, User
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 
@@ -50,7 +51,9 @@ def login():
         if user and user.check_password(password):
             login_user(user)
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('index'))
+            if not next_page or urlparse(next_page).netloc != '':
+                next_page = url_for('index')
+            return redirect(next_page)
         else:
             flash('Invalid username or password')
             

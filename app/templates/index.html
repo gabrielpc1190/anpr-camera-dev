@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="light">
 
 <head>
     <meta charset="UTF-8">
@@ -7,6 +7,23 @@
     <title>ANPR Event Viewer</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <script src="{{ url_for('static', filename='tailwind.js') }}"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        gray: {
+                            750: '#2d3748',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
     <style>
         /* Custom scrollbar for webkit browsers */
         ::-webkit-scrollbar {
@@ -17,13 +34,25 @@
             background: #f1f1f1;
         }
 
+        .dark ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+
         ::-webkit-scrollbar-thumb {
             background: #888;
             border-radius: 4px;
         }
 
+        .dark ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+        }
+
         ::-webkit-scrollbar-thumb:hover {
             background: #555;
+        }
+
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
         }
 
         body {
@@ -42,101 +71,209 @@
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='inter.css') }}">
+    <script>
+        // Check for saved theme preference or system preference
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.classList.remove('light');
+        } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.classList.add('light');
+        }
+    </script>
 </head>
 
-<body class="bg-gray-100 text-gray-800">
-    <div class="container mx-auto p-4">
-        <header class="bg-blue-600 text-white p-6 rounded-lg shadow-md mb-8">
-            <h1 class="text-3xl font-bold text-center">ANPR Event Viewer</h1>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
+    <div class="container mx-auto p-4 max-w-7xl">
+        <header
+            class="bg-blue-600 dark:bg-blue-800 text-white p-4 sm:p-6 rounded-xl shadow-lg mb-6 flex justify-between items-center transition-colors duration-200">
+            <div class="flex items-center space-x-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">ANPR Viewer</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <button id="themeToggle"
+                    class="p-2 rounded-full hover:bg-blue-500 dark:hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-blue-600"
+                    aria-label="Toggle Dark Mode">
+                    <!-- Sun Icon -->
+                    <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 hidden dark:block" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <!-- Moon Icon -->
+                    <svg id="moonIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 block dark:hidden" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+                <a href="{{ url_for('logout') }}"
+                    class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">Logout</a>
+            </div>
         </header>
 
-        <div class="mb-6 p-6 bg-white rounded-lg shadow-md">
+        <div class="mb-6 p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md transition-colors duration-200">
             <form id="filterForm" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                <input type="text" id="plate_number" name="plate_number" placeholder="Plate Number"
-                    class="p-2 border rounded">
-                <select id="camera_id" name="camera_id" class="p-2 border rounded">
-                    <option value="">All Cameras</option>
-                </select>
-                <input type="text" name="vehicle_type" placeholder="Vehicle Type (e.g., Vehicle)"
-                    class="p-2 border rounded">
-                <select name="access_status" class="p-2 border rounded">
-                    <option value="">All Statuses</option>
-                    <option value="Normal Car">Normal Car</option>
-                    <option value="Trust Car">Trust Car</option>
-                    <option value="Suspicious Car">Suspicious Car</option>
-                </select>
-                <select name="driving_direction" class="p-2 border rounded">
-                    <option value="">All Directions</option>
-                    <option value="Approach">Approach</option>
-                    <option value="Leave">Leave</option>
-                </select>
-                <input type="date" name="start_date" class="p-2 border rounded">
-                <input type="date" name="end_date" class="p-2 border rounded">
-                <div class="col-span-full flex justify-end space-x-2">
-                    <button type="submit"
-                        class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">Search</button>
+                <div class="space-y-1">
+                    <label for="plate_number"
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Plate</label>
+                    <input type="text" id="plate_number" name="plate_number" placeholder="Search Plate..."
+                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
+                </div>
+                <div class="space-y-1">
+                    <label for="camera_id"
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Camera</label>
+                    <select id="camera_id" name="camera_id"
+                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
+                        <option value="">All Cameras</option>
+                    </select>
+                </div>
+                <div class="space-y-1">
+                    <label for="vehicle_type"
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</label>
+                    <input type="text" name="vehicle_type" placeholder="Vehicle Type"
+                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
+                </div>
+                <div class="space-y-1">
+                    <label for="access_status"
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</label>
+                    <select name="access_status"
+                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
+                        <option value="">All Statuses</option>
+                        <option value="Normal Car">Normal Car</option>
+                        <option value="Trust Car">Trust Car</option>
+                        <option value="Suspicious Car">Suspicious Car</option>
+                        <option value="Unknown">Unknown</option>
+                    </select>
+                </div>
+                <div class="space-y-1">
+                    <label for="driving_direction"
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Direction</label>
+                    <select name="driving_direction"
+                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
+                        <option value="">All Directions</option>
+                        <option value="Approach">Approach</option>
+                        <option value="Leave">Leave</option>
+                    </select>
+                </div>
+                <div class="space-y-1">
+                    <label for="start_date"
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Start
+                        Date</label>
+                    <input type="date" name="start_date"
+                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
+                </div>
+                <div class="space-y-1">
+                    <label for="end_date"
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">End
+                        Date</label>
+                    <input type="date" name="end_date"
+                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
+                </div>
+                <div class="col-span-full flex justify-end space-x-3 mt-2">
                     <button type="reset" id="resetButton"
-                        class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg">Reset</button>
+                        class="px-5 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold rounded-lg transition-colors focus:ring-2 focus:ring-gray-400">
+                        Reset
+                    </button>
+                    <button type="submit"
+                        class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800">
+                        Search
+                    </button>
                 </div>
             </form>
         </div>
 
         <div id="new-events-notification"
-            class="hidden fixed top-4 left-1/2 -translate-x-1/2 bg-blue-500 text-white py-2 px-4 rounded-lg shadow-lg cursor-pointer hover:bg-blue-600 transition-all">
-            New events available. Click to refresh.
+            class="hidden fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white py-2 px-6 rounded-full shadow-xl cursor-pointer hover:bg-blue-700 transition-all transform hover:scale-105 flex items-center space-x-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 animate-bounce" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span class="font-medium">New events available</span>
         </div>
 
-        <div class="bg-white rounded-lg shadow-md overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Image</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Timestamp</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Plate Number</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Access Status</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Vehicle Type</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Vehicle Color</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Direction</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Camera ID</th>
-                    </tr>
-                </thead>
-                <tbody id="eventsTableBody" class="bg-white divide-y divide-gray-200">
-                    <tr>
-                        <td colspan="8" class="text-center p-4 text-gray-500">Loading events...</td>
-                    </tr>
-                </tbody>
-            </table>
+        <div
+            class="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden transition-colors duration-200 border border-gray-100 dark:border-gray-700">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-750">
+                        <tr>
+                            <th scope="col"
+                                class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Image</th>
+                            <th scope="col"
+                                class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Timestamp</th>
+                            <th scope="col"
+                                class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Plate</th>
+                            <th scope="col"
+                                class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Status</th>
+                            <th scope="col"
+                                class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Type</th>
+                            <th scope="col"
+                                class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Color</th>
+                            <th scope="col"
+                                class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Direction</th>
+                            <th scope="col"
+                                class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Camera</th>
+                        </tr>
+                    </thead>
+                    <tbody id="eventsTableBody"
+                        class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        <tr>
+                            <td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400">Loading
+                                events...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div id="paginationControls"
-            class="mt-6 p-4 bg-white rounded-lg shadow-md flex flex-col sm:flex-row justify-between items-center">
+            class="mt-6 p-4 bg-white dark:bg-gray-800 rounded-xl shadow-md flex flex-col sm:flex-row justify-between items-center transition-colors duration-200 border border-gray-100 dark:border-gray-700">
             <button id="prevButton"
-                class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors mb-2 sm:mb-0"
+                class="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold py-2 px-6 rounded-lg shadow-sm transition-colors mb-2 sm:mb-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled>Previous</button>
-            <div id="pageInfo" class="text-sm text-gray-700 mb-2 sm:mb-0">Page 1 of 1</div>
+            <div id="pageInfo" class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 sm:mb-0">Page 1 of 1
+            </div>
             <button id="nextButton"
-                class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors"
+                class="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold py-2 px-6 rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled>Next</button>
         </div>
     </div>
 
     <script>
+        // --- Theme Toggle Logic ---
+        const themeToggleBtn = document.getElementById('themeToggle');
+
+        themeToggleBtn.addEventListener('click', () => {
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                document.documentElement.classList.add('light');
+                localStorage.theme = 'light';
+            } else {
+                document.documentElement.classList.remove('light');
+                document.documentElement.classList.add('dark');
+                localStorage.theme = 'dark';
+            }
+        });
+
+        // --- Existing App Logic ---
         const filterForm = document.getElementById('filterForm');
         const resetButton = document.getElementById('resetButton');
         const eventsTableBody = document.getElementById('eventsTableBody');
@@ -157,7 +294,13 @@
             const data = await fetchApiData(`/api/events/latest_timestamp?since=${latestTimestamp}`);
             if (data && data.new_events_count > 0) {
                 const count = data.new_events_count;
-                newEventsNotification.textContent = `${count} new event${count > 1 ? 's' : ''} available. Click to refresh.`;
+                // Update text but keep icon
+                newEventsNotification.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span class="font-medium">${count} new event${count > 1 ? 's' : ''} available</span>
+                `;
                 newEventsNotification.classList.remove('hidden');
             }
         }
@@ -186,7 +329,7 @@
         }
 
         async function fetchEvents(page = 1, filters = new URLSearchParams()) {
-            eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-gray-500"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>Loading events...</td></tr>';
+            eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>Loading events...</td></tr>';
 
             const params = new URLSearchParams(filters);
             params.set('page', page);
@@ -205,7 +348,7 @@
                 updateTable(data.events);
                 updatePaginationControls();
             } else {
-                eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-red-500">Error loading events. Please try again later.</td></tr>';
+                eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-red-500 dark:text-red-400">Error loading events. Please try again later.</td></tr>';
                 totalPages = 0; currentPage = 1;
                 updatePaginationControls();
             }
@@ -214,28 +357,37 @@
         function updateTable(events) {
             eventsTableBody.innerHTML = '';
             if (!events || events.length === 0) {
-                eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">No events found.</td></tr>';
+                eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400">No events found.</td></tr>';
                 return;
             }
             events.forEach((event, index) => {
                 const row = document.createElement('tr');
-                row.classList.add('event-row');
+                row.classList.add('event-row', 'hover:bg-gray-50', 'dark:hover:bg-gray-750', 'transition-colors');
                 row.style.animationDelay = `${index * 0.05}s`;
                 const sanitize = str => str ? String(str).replace(/</g, "&lt;").replace(/>/g, "&gt;") : 'N/A';
                 const imageUrl = event.image_filename ? `/images/${event.image_filename}` : '#';
                 const processedData = event.processed_data || {};
 
+                const getStatusBadge = (status) => {
+                    const s = status ? String(status) : 'Unknown';
+                    let colorClass = 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+                    if (s === 'Trust Car') colorClass = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+                    else if (s === 'Suspicious Car') colorClass = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+                    else if (s === 'Normal Car') colorClass = 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+                    return `<span class="px-2.5 py-0.5 inline-flex text-xs font-semibold rounded-full ${colorClass}">${sanitize(s)}</span>`;
+                };
+
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap">
-                        ${event.image_filename ? `<a href="${imageUrl}" target="_blank" title="Click to view full image"><img src="${imageUrl}" alt="Plate ${sanitize(event.plate_number)}" class="h-16 w-24 object-cover rounded-md shadow-sm hover:shadow-lg transition-shadow"></a>` : 'No Image'}
+                        ${event.image_filename ? `<a href="${imageUrl}" target="_blank" title="View full image"><img src="${imageUrl}" alt="Plate ${sanitize(event.plate_number)}" class="h-16 w-24 object-cover rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-gray-600"></a>` : '<span class="text-gray-400 italic">No Image</span>'}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.timestamp)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${sanitize(event.plate_number)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.access_status)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.vehicle_type)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(processedData.VehicleColor)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.driving_direction)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${sanitize(event.camera_id)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.timestamp)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white font-mono">${sanitize(event.plate_number)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">${getStatusBadge(event.access_status)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.vehicle_type)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(processedData.VehicleColor)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.driving_direction)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.camera_id)}</td>
                 `;
                 eventsTableBody.appendChild(row);
             });
@@ -245,13 +397,15 @@
             pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
             prevButton.disabled = currentPage <= 1;
             nextButton.disabled = currentPage >= totalPages;
+
+            const btnClass = "bg-blue-600 hover:bg-blue-700 text-white shadow-md";
+            const disabledClass = "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed";
+
             [prevButton, nextButton].forEach(button => {
                 if (button.disabled) {
-                    button.classList.remove('bg-blue-500', 'hover:bg-blue-600', 'text-white');
-                    button.classList.add('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                    button.className = `py-2 px-6 rounded-lg font-semibold transition-colors ${disabledClass}`;
                 } else {
-                    button.classList.add('bg-blue-500', 'hover:bg-blue-600', 'text-white');
-                    button.classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                    button.className = `py-2 px-6 rounded-lg font-semibold transition-colors ${btnClass}`;
                 }
             });
         }

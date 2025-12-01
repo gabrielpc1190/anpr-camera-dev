@@ -33,7 +33,7 @@ usage() {
     echo "Commands:"
     echo "  start        Automates SDK download, validates config, builds, and starts all services."
     echo "  stop         Stops and removes all running containers."
-    echo "  restart      Restarts all services."
+    echo "  restart      Stops and then starts all services (full restart)."
     echo "  logs [service] Shows logs for all services or a specific one. (e.g., '$0 logs anpr-listener')"
     echo "  clean [--force] Stops services and optionally deletes data from host volumes. Use --force to skip confirmation."
     echo "  reconfigure  Stops services and prompts you to edit configuration files."
@@ -771,10 +771,9 @@ case $COMMAND in
         echo "--- Services stopped. ---"
         ;;
     restart)
-        install_dependencies
-        echo "--- Restarting all services... ---"
-        $COMPOSE_CMD restart
-        echo "--- Services restarted. ---"
+        echo "--- Performing full restart (stop + start)... ---"
+        "$0" stop
+        "$0" start
         ;;
     logs)
         install_dependencies
