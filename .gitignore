@@ -33,3 +33,7 @@ dahua_sdk.zip
 
 # MariaDB data directory (bind mount)
 app/db/
+
+# Audits and Tests
+audit_report.md
+tests/
