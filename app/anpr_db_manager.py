@@ -224,6 +224,8 @@ def get_events():
     camera_id = request.args.get('camera_id', type=str)
     start_date_str = request.args.get('start_date', type=str)
     end_date_str = request.args.get('end_date', type=str)
+    start_time_str = request.args.get('start_time', type=str)
+    end_time_str = request.args.get('end_time', type=str)
     
     # --- NUEVOS PARÁMETROS DE FILTRO ---
     vehicle_type = request.args.get('vehicle_type', type=str)
@@ -231,6 +233,7 @@ def get_events():
     driving_direction = request.args.get('driving_direction', type=str)
     
     offset = (page - 1) * limit
+    
     
     # --- Construir la consulta SQL dinámicamente ---
     query_params, where_clauses = [], []
@@ -243,12 +246,30 @@ def get_events():
     if camera_id:
         where_clauses.append("camera_id = %s")
         query_params.append(camera_id)
+    
+    # Filtro de fecha/hora de inicio
     if start_date_str:
-        where_clauses.append("DATE(timestamp) >= %s")
-        query_params.append(start_date_str)
+        if start_time_str:
+            # Combinar fecha + hora
+            start_datetime = f"{start_date_str} {start_time_str}:00"
+            where_clauses.append("timestamp >= %s")
+            query_params.append(start_datetime)
+        else:
+            # Solo fecha (comportamiento original)
+            where_clauses.append("DATE(timestamp) >= %s")
+            query_params.append(start_date_str)
+    
+    # Filtro de fecha/hora de fin
     if end_date_str:
-        where_clauses.append("DATE(timestamp) <= %s")
-        query_params.append(end_date_str)
+        if end_time_str:
+            # Combinar fecha + hora
+            end_datetime = f"{end_date_str} {end_time_str}:59"
+            where_clauses.append("timestamp <= %s")
+            query_params.append(end_datetime)
+        else:
+            # Solo fecha (comportamiento original)
+            where_clauses.append("DATE(timestamp) <= %s")
+            query_params.append(end_date_str)
 
     # --- LÓGICA AÑADIDA PARA NUEVOS FILTROS ---
     if vehicle_type:
