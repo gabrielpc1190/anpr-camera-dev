@@ -37,3 +37,4 @@ app/db/
 # Audits and Tests
 audit_report.md
 tests/
+backups/
