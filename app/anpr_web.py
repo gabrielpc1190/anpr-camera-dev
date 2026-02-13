@@ -131,13 +131,17 @@ def list_sessions():
                         session_data['username'] = user.username if user else f'Unknown (ID:{user_id})'
                         session_data['role'] = user.role if user else 'unknown'
                         
+                        # Correctly handle prefix for is_current check
+                        prefix = app.config.get('SESSION_KEY_PREFIX', '')
+                        full_sid = f"{prefix}{current_sid}" if current_sid else None
+                        
                         sessions_list.append({
                             'id': row.id,
                             'session_id': row.session_id[:16] + '...',
                             'username': session_data.get('username', 'Unknown'),
                             'role': session_data.get('role', '-'),
                             'expiry': row.expiry.isoformat() if row.expiry else None,
-                            'is_current': row.session_id == current_sid
+                            'is_current': row.session_id == full_sid
                         })
             except Exception:
                 pass
