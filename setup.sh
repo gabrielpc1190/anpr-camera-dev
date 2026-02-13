@@ -559,7 +559,21 @@ for u in users:
         break
     done
 
-    echo "Creating user..."
+    # Role selection
+    echo
+    echo "Select role:"
+    echo "  1) admin  - Full access (manage users, sessions, events)"
+    echo "  2) viewer - Read-only access (view and search events only)"
+    while true; do
+        read -p "Enter choice [1/2]: " ROLE_CHOICE
+        case "$ROLE_CHOICE" in
+            1) NEW_ROLE="admin"; break;;
+            2) NEW_ROLE="viewer"; break;;
+            *) echo -e "${RED}Invalid choice. Enter 1 or 2.${NC}";;
+        esac
+    done
+
+    echo "Creating user with role '${NEW_ROLE}'..."
     CREATE_COMMAND="
 from app.models import db, User
 from app.anpr_web import app
@@ -570,11 +584,11 @@ with app.app_context():
     if existing_user:
         print(f'User {existing_user.username} already exists.', file=sys.stderr)
         sys.exit(1)
-    user = User(username='$NEW_USERNAME')
+    user = User(username='$NEW_USERNAME', role='$NEW_ROLE')
     user.set_password('$NEW_PASSWORD')
     db.session.add(user)
     db.session.commit()
-    print(f'User {user.username} created successfully!')
+    print(f'User {user.username} created with role: {user.role}')
 "
     docker exec anpr-web python -c "$CREATE_COMMAND"
 
