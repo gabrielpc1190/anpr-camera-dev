@@ -71,7 +71,7 @@ services:
     depends_on:
       anpr-db-manager:
         condition: service_healthy
-    command: gunicorn --bind 0.0.0.0:5000 --workers 4 app.anpr_web:app
+    command: gunicorn --bind 0.0.0.0:5000 --workers 4 --threads 4 app.anpr_web:app
 
   # 4. MariaDB: The database service
   mariadb:

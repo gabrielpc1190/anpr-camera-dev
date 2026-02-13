@@ -71,6 +71,7 @@
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='inter.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css">
     <script>
         // Check for saved theme preference or system preference
         if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -277,7 +278,7 @@
                 disabled>Next</button>
         </div>
     </div>
-
+    <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
     <script>
         // --- Theme Toggle Logic ---
         const themeToggleBtn = document.getElementById('themeToggle');
@@ -375,6 +376,8 @@
             }
         }
 
+        let lightbox = null;
+
         function updateTable(events) {
             eventsTableBody.innerHTML = '';
             if (!events || events.length === 0) {
@@ -398,9 +401,22 @@
                     return `<span class="px-2.5 py-0.5 inline-flex text-xs font-semibold rounded-full ${colorClass}">${sanitize(s)}</span>`;
                 };
 
+                const imageCell = event.image_filename ?
+                    `<div class="flex items-center space-x-2">
+                        <a href="${imageUrl}" class="glightbox" data-gallery="gallery">
+                            <img src="${imageUrl}" alt="Plate ${sanitize(event.plate_number)}" class="h-16 w-24 object-cover rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-gray-600">
+                        </a>
+                        <a href="${imageUrl}" target="_blank" title="Open original in new tab" class="text-gray-400 hover:text-blue-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                        </a>
+                     </div>`
+                    : '<span class="text-gray-400 italic">No Image</span>';
+
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap">
-                        ${event.image_filename ? `<a href="${imageUrl}" target="_blank" title="View full image"><img src="${imageUrl}" alt="Plate ${sanitize(event.plate_number)}" class="h-16 w-24 object-cover rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-gray-600"></a>` : '<span class="text-gray-400 italic">No Image</span>'}
+                        ${imageCell}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.timestamp)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white font-mono">${sanitize(event.plate_number)}</td>
@@ -412,6 +428,27 @@
                 `;
                 eventsTableBody.appendChild(row);
             });
+
+            // Re-init lightbox after table update
+            if (typeof GLightbox !== 'undefined') {
+                if (lightbox) {
+                    lightbox.reload();
+                } else {
+                    lightbox = GLightbox({
+                        selector: '.glightbox',
+                        touchNavigation: true,
+                        loop: false,
+                        zoomable: true,
+                        onOpen: () => {
+                            if (document.activeElement) {
+                                document.activeElement.blur();
+                            }
+                        }
+                    });
+                }
+            } else {
+                console.error("GLightbox library not loaded");
+            }
         }
 
         function updatePaginationControls() {
