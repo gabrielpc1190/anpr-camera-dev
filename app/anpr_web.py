@@ -129,20 +129,16 @@ def list_sessions():
                         user = User.query.get(int(user_id))
                         session_data['username'] = user.username if user else f'Unknown (ID:{user_id})'
                         session_data['role'] = user.role if user else 'unknown'
-                    else:
-                        session_data['username'] = 'Anonymous'
-                        session_data['role'] = '-'
+                        
+                        sessions_list.append({
+                            'id': row.id,
+                            'session_id': row.session_id[:16] + '...',
+                            'username': session_data.get('username', 'Unknown'),
+                            'role': session_data.get('role', '-'),
+                            'expiry': row.expiry.isoformat() if row.expiry else None,
+                        })
             except Exception:
-                session_data['username'] = 'Unknown'
-                session_data['role'] = '-'
-
-            sessions_list.append({
-                'id': row.id,
-                'session_id': row.session_id[:16] + '...',
-                'username': session_data.get('username', 'Unknown'),
-                'role': session_data.get('role', '-'),
-                'expiry': row.expiry.isoformat() if row.expiry else None,
-            })
+                pass
 
         return jsonify({'sessions': sessions_list, 'count': len(sessions_list)})
     except Exception as e:
