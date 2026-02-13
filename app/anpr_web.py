@@ -76,6 +76,28 @@ def login():
         if user and user.check_password(password):
             login_user(user)
             session.permanent = True
+            
+            # Capture and save IP address to the session record
+            # Handle potential proxies like Cloudflare
+            ip_addr = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if ip_addr and ',' in ip_addr:
+                ip_addr = ip_addr.split(',')[0].strip()
+            
+            session_model = app.config.get('SESSION_SQLALCHEMY_TABLE', 'sessions')
+            try:
+                # Update the session record with the IP address
+                # flask-session stores the sid in the session object
+                prefix = app.config.get('SESSION_KEY_PREFIX', '')
+                full_sid = f"{prefix}{session.sid}"
+                db.session.execute(
+                    db.text(f"UPDATE {session_model} SET ip_address = :ip WHERE session_id = :sid"),
+                    {"ip": ip_addr, "sid": full_sid}
+                )
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error saving IP to session: {e}")
+
             next_page = request.args.get('next')
             if not next_page or urlparse(next_page).netloc != '':
                 next_page = url_for('index')
@@ -111,7 +133,7 @@ def list_sessions():
     current_sid = getattr(session, 'sid', None)
     try:
         result = db.session.execute(
-            db.text(f"SELECT id, session_id, expiry FROM {session_model}")
+            db.text(f"SELECT id, session_id, expiry, ip_address FROM {session_model}")
         )
         sessions_list = []
         import msgspec
@@ -140,6 +162,7 @@ def list_sessions():
                             'session_id': row.session_id[:16] + '...',
                             'username': session_data.get('username', 'Unknown'),
                             'role': session_data.get('role', '-'),
+                            'ip_address': row.ip_address if hasattr(row, 'ip_address') else None,
                             'expiry': row.expiry.isoformat() if row.expiry else None,
                             'is_current': row.session_id == full_sid
                         })
@@ -356,6 +379,18 @@ with app.app_context():
         ))
         db.session.commit()
         print("Added 'role' column to user table.")
+    except Exception:
+        db.session.rollback()
+        # Column already exists, no action needed
+
+    # Add 'ip_address' column to sessions table if it doesn't exist
+    try:
+        session_model = app.config.get('SESSION_SQLALCHEMY_TABLE', 'sessions')
+        db.session.execute(db.text(
+            f"ALTER TABLE {session_model} ADD COLUMN ip_address VARCHAR(45) NULL"
+        ))
+        db.session.commit()
+        print(f"Added 'ip_address' column to {session_model} table.")
     except Exception:
         db.session.rollback()
         # Column already exists, no action needed

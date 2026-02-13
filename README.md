@@ -146,6 +146,7 @@ Manage users through the `setup.sh` script or the **Admin Panel** in the web int
 ### Advanced Session Management
 The Admin Panel (`/admin`) allows:
 *   **Session Identification**: Your own session is clearly marked as **"Tú (esta sesión)"** and is protected from accidental deletion.
+*   **IP Tracking**: Every new session automatically captures the user's **IP Address**, allowing you to identify the origin of the connection.
 *   **Bulk Revocation**: A "Revoke All" button clears all active sessions except your own, useful for security audits.
 *   **Session Filtering**: Anonymous and expired sessions are automatically filtered out for clarity.
 
