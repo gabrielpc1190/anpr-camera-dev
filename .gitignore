@@ -38,3 +38,4 @@ app/db/
 audit_report.md
 tests/
 backups/
+draft/

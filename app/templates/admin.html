@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANPR Admin Panel</title>
+    <script src="{{ url_for('static', filename='tailwind.js') }}"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='inter.css') }}">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .tab-active { border-bottom: 3px solid #3b82f6; color: #3b82f6; font-weight: 600; }
+        .tab-inactive { border-bottom: 3px solid transparent; color: #6b7280; }
+        .tab-active.dark-mode { color: #60a5fa; border-color: #60a5fa; }
+        .modal-overlay { background: rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
+    <div class="container mx-auto p-4 max-w-6xl">
+
+        <!-- Header -->
+        <header class="bg-blue-600 dark:bg-blue-800 text-white p-4 sm:p-6 rounded-xl shadow-lg mb-6 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">Admin Panel</h1>
+            </div>
+            <div class="flex items-center space-x-3">
+                <a href="{{ url_for('index') }}"
+                    class="bg-blue-500 hover:bg-blue-400 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">
+                    ← Dashboard
+                </a>
+                <a href="{{ url_for('logout') }}"
+                    class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">
+                    Logout
+                </a>
+            </div>
+        </header>
+
+        <!-- Tabs -->
+        <div class="flex space-x-6 mb-6 border-b border-gray-300 dark:border-gray-700">
+            <button id="tabSessions" onclick="switchTab('sessions')"
+                class="pb-3 px-2 text-sm sm:text-base cursor-pointer tab-active transition-colors">
+                🔐 Active Sessions
+            </button>
+            <button id="tabUsers" onclick="switchTab('users')"
+                class="pb-3 px-2 text-sm sm:text-base cursor-pointer tab-inactive transition-colors">
+                👥 Viewer Users
+            </button>
+        </div>
+
+        <!-- Sessions Tab -->
+        <div id="panelSessions">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold">Active Sessions <span id="sessionCount" class="text-sm text-gray-500 dark:text-gray-400"></span></h2>
+                <div class="flex space-x-2">
+                    <button onclick="loadSessions()"
+                        class="bg-blue-500 hover:bg-blue-600 text-white text-sm py-2 px-4 rounded-lg transition-colors">
+                        🔄 Refresh
+                    </button>
+                    <button onclick="revokeAllSessions()"
+                        class="bg-red-600 hover:bg-red-700 text-white text-sm py-2 px-4 rounded-lg transition-colors">
+                        ⚠ Revoke All
+                    </button>
+                </div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
+                        <tr>
+                            <th class="p-3 text-left">User</th>
+                            <th class="p-3 text-left">Role</th>
+                            <th class="p-3 text-left">Session ID</th>
+                            <th class="p-3 text-left">Expires</th>
+                            <th class="p-3 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionsBody" class="divide-y divide-gray-200 dark:divide-gray-600">
+                        <tr><td colspan="5" class="p-4 text-center text-gray-500">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Users Tab -->
+        <div id="panelUsers" class="hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold">Viewer Users <span id="userCount" class="text-sm text-gray-500 dark:text-gray-400"></span></h2>
+                <button onclick="showCreateUserModal()"
+                    class="bg-green-600 hover:bg-green-700 text-white text-sm py-2 px-4 rounded-lg transition-colors">
+                    + Create Viewer
+                </button>
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">ℹ Admin users are managed via CLI only (<code>./setup.sh create-user</code>)</p>
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
+                        <tr>
+                            <th class="p-3 text-left">ID</th>
+                            <th class="p-3 text-left">Username</th>
+                            <th class="p-3 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersBody" class="divide-y divide-gray-200 dark:divide-gray-600">
+                        <tr><td colspan="3" class="p-4 text-center text-gray-500">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Create User Modal -->
+        <div id="createUserModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
+                <h3 class="text-lg font-bold mb-4">Create Viewer User</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Username</label>
+                        <input id="newUsername" type="text" placeholder="Enter username"
+                            class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Password</label>
+                        <input id="newPassword" type="password" placeholder="Min 6 characters"
+                            class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div id="createUserError" class="text-red-500 text-sm hidden"></div>
+                    <div class="flex justify-end space-x-3">
+                        <button onclick="hideCreateUserModal()"
+                            class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                            Cancel
+                        </button>
+                        <button onclick="createUser()"
+                            class="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
+                            Create
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reset Password Modal -->
+        <div id="resetPasswordModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
+                <h3 class="text-lg font-bold mb-4">Reset Password for <span id="resetUserName" class="text-blue-500"></span></h3>
+                <input type="hidden" id="resetUserId">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">New Password</label>
+                        <input id="resetNewPassword" type="password" placeholder="Min 6 characters"
+                            class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div id="resetPasswordError" class="text-red-500 text-sm hidden"></div>
+                    <div class="flex justify-end space-x-3">
+                        <button onclick="hideResetPasswordModal()"
+                            class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                            Cancel
+                        </button>
+                        <button onclick="resetPassword()"
+                            class="px-4 py-2 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors">
+                            Reset
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Tab Switching ---
+        function switchTab(tab) {
+            document.getElementById('panelSessions').classList.toggle('hidden', tab !== 'sessions');
+            document.getElementById('panelUsers').classList.toggle('hidden', tab !== 'users');
+            document.getElementById('tabSessions').className = `pb-3 px-2 text-sm sm:text-base cursor-pointer transition-colors ${tab === 'sessions' ? 'tab-active' : 'tab-inactive'}`;
+            document.getElementById('tabUsers').className = `pb-3 px-2 text-sm sm:text-base cursor-pointer transition-colors ${tab === 'users' ? 'tab-active' : 'tab-inactive'}`;
+
+            if (tab === 'sessions') loadSessions();
+            if (tab === 'users') loadUsers();
+        }
+
+        // --- Sessions ---
+        async function loadSessions() {
+            try {
+                const res = await fetch('/admin/sessions');
+                const data = await res.json();
+                const tbody = document.getElementById('sessionsBody');
+                document.getElementById('sessionCount').textContent = `(${data.count})`;
+
+                if (data.sessions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No active sessions</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.sessions.map(s => `
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="p-3 font-medium">${escHtml(s.username)}</td>
+                        <td class="p-3"><span class="px-2 py-1 rounded-full text-xs ${s.role === 'admin' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}">${s.role}</span></td>
+                        <td class="p-3 text-gray-500 dark:text-gray-400 font-mono text-xs">${s.session_id}</td>
+                        <td class="p-3 text-gray-500 dark:text-gray-400">${s.expiry ? new Date(s.expiry).toLocaleString() : '-'}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="revokeSession(${s.id})"
+                                class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
+                                Revoke
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load sessions:', e);
+            }
+        }
+
+        async function revokeSession(id) {
+            if (!confirm('Revoke this session? The user will be logged out.')) return;
+            try {
+                await fetch(`/admin/sessions/${id}`, { method: 'DELETE' });
+                loadSessions();
+            } catch (e) { alert('Failed to revoke session: ' + e.message); }
+        }
+
+        async function revokeAllSessions() {
+            if (!confirm('⚠ Revoke ALL sessions? Every user (including you) will be logged out.')) return;
+            try {
+                await fetch('/admin/sessions/revoke-all', { method: 'POST' });
+                window.location.href = '/login';
+            } catch (e) { alert('Failed: ' + e.message); }
+        }
+
+        // --- Users ---
+        async function loadUsers() {
+            try {
+                const res = await fetch('/admin/users');
+                const data = await res.json();
+                const tbody = document.getElementById('usersBody');
+                document.getElementById('userCount').textContent = `(${data.count})`;
+
+                if (data.users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500">No viewer users yet</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.users.map(u => `
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="p-3 text-gray-500">${u.id}</td>
+                        <td class="p-3 font-medium">${escHtml(u.username)}</td>
+                        <td class="p-3 text-center space-x-2">
+                            <button onclick="showResetPasswordModal(${u.id}, '${escHtml(u.username)}')"
+                                class="text-orange-500 hover:text-orange-700 text-xs font-medium px-2 py-1 rounded hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors">
+                                🔑 Reset Password
+                            </button>
+                            <button onclick="deleteUser(${u.id}, '${escHtml(u.username)}')"
+                                class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
+                                🗑 Delete
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load users:', e);
+            }
+        }
+
+        async function deleteUser(id, username) {
+            if (!confirm(`Delete viewer user "${username}"? This cannot be undone.`)) return;
+            try {
+                const res = await fetch(`/admin/users/${id}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok) { alert(data.error || 'Failed'); return; }
+                loadUsers();
+            } catch (e) { alert('Failed: ' + e.message); }
+        }
+
+        // --- Create User Modal ---
+        function showCreateUserModal() {
+            document.getElementById('createUserModal').classList.remove('hidden');
+            document.getElementById('newUsername').value = '';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('createUserError').classList.add('hidden');
+            document.getElementById('newUsername').focus();
+        }
+        function hideCreateUserModal() {
+            document.getElementById('createUserModal').classList.add('hidden');
+        }
+
+        async function createUser() {
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const errEl = document.getElementById('createUserError');
+
+            if (!username || !password) { errEl.textContent = 'Both fields are required.'; errEl.classList.remove('hidden'); return; }
+            if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.classList.remove('hidden'); return; }
+
+            try {
+                const res = await fetch('/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+                if (!res.ok) { errEl.textContent = data.error || 'Failed'; errEl.classList.remove('hidden'); return; }
+                hideCreateUserModal();
+                loadUsers();
+            } catch (e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
+        }
+
+        // --- Reset Password Modal ---
+        function showResetPasswordModal(id, username) {
+            document.getElementById('resetPasswordModal').classList.remove('hidden');
+            document.getElementById('resetUserId').value = id;
+            document.getElementById('resetUserName').textContent = username;
+            document.getElementById('resetNewPassword').value = '';
+            document.getElementById('resetPasswordError').classList.add('hidden');
+            document.getElementById('resetNewPassword').focus();
+        }
+        function hideResetPasswordModal() {
+            document.getElementById('resetPasswordModal').classList.add('hidden');
+        }
+
+        async function resetPassword() {
+            const id = document.getElementById('resetUserId').value;
+            const password = document.getElementById('resetNewPassword').value;
+            const errEl = document.getElementById('resetPasswordError');
+
+            if (!password || password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.classList.remove('hidden'); return; }
+
+            try {
+                const res = await fetch(`/admin/users/${id}/reset-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                if (!res.ok) { errEl.textContent = data.error || 'Failed'; errEl.classList.remove('hidden'); return; }
+                hideResetPasswordModal();
+                alert('Password reset successfully.');
+            } catch (e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
+        }
+
+        // --- Utilities ---
+        function escHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // --- Dark Mode ---
+        if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        }
+
+        // --- Init ---
+        loadSessions();
+    </script>
+</body>
+</html>
