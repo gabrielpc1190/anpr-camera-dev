@@ -20,10 +20,11 @@
 - Hotkey shortcuts for rapid navigation.
 - Dashboard optimizations for high event load.
 
-### Phase 4: Session & Security Refinement (v2.2)
+### Phase 4: Session & Security Refinement (v2.2 & v2.3)
 - Advanced Session identification and protection.
 - "Revoke All" functionality (preserving current session).
 - Robust Password Complexity (10+ chars, mixed case, digits).
+- **Session IP Tracking** (Backend capture + UI display).
 - UI security hints and frontend validation.
 - Legacy role migration removal.
 
