@@ -128,7 +128,7 @@ The system includes an authentication module to protect access to the web interf
 
 ### User Management
 
-Manage users through the `setup.sh` script:
+Manage users through the `setup.sh` script or the **Admin Panel** in the web interface.
 
 *   **Reset admin password**:
     ```bash
@@ -142,6 +142,19 @@ Manage users through the `setup.sh` script:
     ```bash
     ./setup.sh delete-user
     ```
+
+### Advanced Session Management
+The Admin Panel (`/admin`) allows:
+*   **Session Identification**: Your own session is clearly marked as **"Tú (esta sesión)"** and is protected from accidental deletion.
+*   **Bulk Revocation**: A "Revoke All" button clears all active sessions except your own, useful for security audits.
+*   **Session Filtering**: Anonymous and expired sessions are automatically filtered out for clarity.
+
+### Password Security (v2.2)
+To ensure system safety, the system enforces the following password rules:
+*   Minimum **10 characters**.
+*   At least one **Uppercase** letter (A-Z).
+*   At least one **Lowercase** letter (a-z).
+*   At least one **Digit** (0-9).
 
 ## 9. Cloudflare Tunnel Configuration
 If you are using Cloudflare Tunnel to expose the application, ensure that the service in the Cloudflare Zero Trust dashboard is pointing to `http://127.0.0.1:5000` (or `localhost:5000`) instead of `http://anpr-web:5000`.
