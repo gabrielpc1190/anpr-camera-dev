@@ -108,6 +108,7 @@ def admin_panel():
 def list_sessions():
     """List all active server-side sessions."""
     session_model = app.config.get('SESSION_SQLALCHEMY_TABLE', 'sessions')
+    current_sid = getattr(session, 'sid', None)
     try:
         result = db.session.execute(
             db.text(f"SELECT id, session_id, expiry FROM {session_model}")
@@ -136,6 +137,7 @@ def list_sessions():
                             'username': session_data.get('username', 'Unknown'),
                             'role': session_data.get('role', '-'),
                             'expiry': row.expiry.isoformat() if row.expiry else None,
+                            'is_current': row.session_id == current_sid
                         })
             except Exception:
                 pass
@@ -163,12 +165,19 @@ def revoke_session(session_id):
 @app.route('/admin/sessions/revoke-all', methods=['POST'])
 @admin_required
 def revoke_all_sessions():
-    """Revoke all sessions (forces everyone to re-login)."""
+    """Revoke all sessions EXCEPT the current one."""
     session_model = app.config.get('SESSION_SQLALCHEMY_TABLE', 'sessions')
+    current_sid = getattr(session, 'sid', None)
     try:
-        result = db.session.execute(db.text(f"DELETE FROM {session_model}"))
+        if current_sid:
+            result = db.session.execute(
+                db.text(f"DELETE FROM {session_model} WHERE session_id != :sid"),
+                {"sid": current_sid}
+            )
+        else:
+            result = db.session.execute(db.text(f"DELETE FROM {session_model}"))
         db.session.commit()
-        return jsonify({'status': 'ok', 'message': f'All sessions revoked ({result.rowcount} removed)'})
+        return jsonify({'status': 'ok', 'message': f'Sessions revoked ({result.rowcount} removed). Your session was preserved.'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

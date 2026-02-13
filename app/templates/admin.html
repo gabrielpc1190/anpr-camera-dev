@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,23 +11,45 @@
     </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='inter.css') }}">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .tab-active { border-bottom: 3px solid #3b82f6; color: #3b82f6; font-weight: 600; }
-        .tab-inactive { border-bottom: 3px solid transparent; color: #6b7280; }
-        .tab-active.dark-mode { color: #60a5fa; border-color: #60a5fa; }
-        .modal-overlay { background: rgba(0,0,0,0.5); }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .tab-active {
+            border-bottom: 3px solid #3b82f6;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+
+        .tab-inactive {
+            border-bottom: 3px solid transparent;
+            color: #6b7280;
+        }
+
+        .tab-active.dark-mode {
+            color: #60a5fa;
+            border-color: #60a5fa;
+        }
+
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.5);
+        }
     </style>
 </head>
+
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
     <div class="container mx-auto p-4 max-w-6xl">
 
         <!-- Header -->
-        <header class="bg-blue-600 dark:bg-blue-800 text-white p-4 sm:p-6 rounded-xl shadow-lg mb-6 flex justify-between items-center">
+        <header
+            class="bg-blue-600 dark:bg-blue-800 text-white p-4 sm:p-6 rounded-xl shadow-lg mb-6 flex justify-between items-center">
             <div class="flex items-center space-x-3">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">Admin Panel</h1>
             </div>
@@ -57,7 +80,8 @@
         <!-- Sessions Tab -->
         <div id="panelSessions">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold">Active Sessions <span id="sessionCount" class="text-sm text-gray-500 dark:text-gray-400"></span></h2>
+                <h2 class="text-lg font-semibold">Active Sessions <span id="sessionCount"
+                        class="text-sm text-gray-500 dark:text-gray-400"></span></h2>
                 <div class="flex space-x-2">
                     <button onclick="loadSessions()"
                         class="bg-blue-500 hover:bg-blue-600 text-white text-sm py-2 px-4 rounded-lg transition-colors">
@@ -81,7 +105,9 @@
                         </tr>
                     </thead>
                     <tbody id="sessionsBody" class="divide-y divide-gray-200 dark:divide-gray-600">
-                        <tr><td colspan="5" class="p-4 text-center text-gray-500">Loading...</td></tr>
+                        <tr>
+                            <td colspan="5" class="p-4 text-center text-gray-500">Loading...</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -90,13 +116,15 @@
         <!-- Users Tab -->
         <div id="panelUsers" class="hidden">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold">Viewer Users <span id="userCount" class="text-sm text-gray-500 dark:text-gray-400"></span></h2>
+                <h2 class="text-lg font-semibold">Viewer Users <span id="userCount"
+                        class="text-sm text-gray-500 dark:text-gray-400"></span></h2>
                 <button onclick="showCreateUserModal()"
                     class="bg-green-600 hover:bg-green-700 text-white text-sm py-2 px-4 rounded-lg transition-colors">
                     + Create Viewer
                 </button>
             </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">ℹ Admin users are managed via CLI only (<code>./setup.sh create-user</code>)</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">ℹ Admin users are managed via CLI only
+                (<code>./setup.sh create-user</code>)</p>
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
@@ -107,7 +135,9 @@
                         </tr>
                     </thead>
                     <tbody id="usersBody" class="divide-y divide-gray-200 dark:divide-gray-600">
-                        <tr><td colspan="3" class="p-4 text-center text-gray-500">Loading...</td></tr>
+                        <tr>
+                            <td colspan="3" class="p-4 text-center text-gray-500">Loading...</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -146,7 +176,8 @@
         <!-- Reset Password Modal -->
         <div id="resetPasswordModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
-                <h3 class="text-lg font-bold mb-4">Reset Password for <span id="resetUserName" class="text-blue-500"></span></h3>
+                <h3 class="text-lg font-bold mb-4">Reset Password for <span id="resetUserName"
+                        class="text-blue-500"></span></h3>
                 <input type="hidden" id="resetUserId">
                 <div class="space-y-4">
                     <div>
@@ -196,16 +227,19 @@
                 }
 
                 tbody.innerHTML = data.sessions.map(s => `
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                        <td class="p-3 font-medium">${escHtml(s.username)}</td>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 ${s.is_current ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}">
+                        <td class="p-3 font-medium">
+                            ${escHtml(s.username)}
+                            ${s.is_current ? '<span class="ml-2 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded uppercase font-bold">Current</span>' : ''}
+                        </td>
                         <td class="p-3"><span class="px-2 py-1 rounded-full text-xs ${s.role === 'admin' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}">${s.role}</span></td>
                         <td class="p-3 text-gray-500 dark:text-gray-400 font-mono text-xs">${s.session_id}</td>
                         <td class="p-3 text-gray-500 dark:text-gray-400">${s.expiry ? new Date(s.expiry).toLocaleString() : '-'}</td>
                         <td class="p-3 text-center">
-                            <button onclick="revokeSession(${s.id})"
-                                class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
-                                Revoke
-                            </button>
+                            ${s.is_current ?
+                        '<span class="text-blue-500 text-xs font-semibold">Self (Active)</span>' :
+                        `<button onclick="revokeSession(${s.id})" class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">Revoke</button>`
+                    }
                         </td>
                     </tr>
                 `).join('');
@@ -223,10 +257,12 @@
         }
 
         async function revokeAllSessions() {
-            if (!confirm('⚠ Revoke ALL sessions? Every user (including you) will be logged out.')) return;
+            if (!confirm('⚠ Revoke ALL other sessions? Every other user will be logged out. Your current session will be preserved.')) return;
             try {
-                await fetch('/admin/sessions/revoke-all', { method: 'POST' });
-                window.location.href = '/login';
+                const res = await fetch('/admin/sessions/revoke-all', { method: 'POST' });
+                const data = await res.json();
+                alert(data.message || 'Sessions revoked');
+                loadSessions();
             } catch (e) { alert('Failed: ' + e.message); }
         }
 
@@ -356,4 +392,5 @@
         loadSessions();
     </script>
 </body>
+
 </html>
