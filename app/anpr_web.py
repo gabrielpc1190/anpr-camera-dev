@@ -113,7 +113,7 @@ def list_sessions():
             db.text(f"SELECT id, session_id, expiry FROM {session_model}")
         )
         sessions_list = []
-        import pickle
+        import msgspec
         for row in result:
             session_data = {}
             try:
@@ -123,7 +123,7 @@ def list_sessions():
                     {"id": row.id}
                 ).fetchone()
                 if raw and raw.data:
-                    decoded = pickle.loads(raw.data)
+                    decoded = msgspec.msgpack.decode(raw.data)
                     user_id = decoded.get('_user_id')
                     if user_id:
                         user = User.query.get(int(user_id))
