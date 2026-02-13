@@ -198,6 +198,23 @@ def list_users():
         'count': len(users)
     })
 
+def is_password_strong(password):
+    """Check if password meets complexity requirements:
+    - Minimum 10 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    """
+    if len(password) < 10:
+        return False, "Password must be at least 10 characters long."
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least one uppercase letter."
+    if not any(c.islower() for c in password):
+        return False, "Password must contain at least one lowercase letter."
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one digit."
+    return True, ""
+
 @app.route('/admin/users', methods=['POST'])
 @admin_required
 def create_viewer_user():
@@ -212,8 +229,9 @@ def create_viewer_user():
     if not username or not password:
         return jsonify({'error': 'Username and password are required'}), 400
 
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    is_strong, msg = is_password_strong(password)
+    if not is_strong:
+        return jsonify({'error': msg}), 400
 
     if User.query.filter_by(username=username).first():
         return jsonify({'error': f'User "{username}" already exists'}), 409
@@ -260,8 +278,10 @@ def reset_viewer_password(user_id):
 
     data = request.get_json()
     new_password = data.get('password', '') if data else ''
-    if not new_password or len(new_password) < 6:
-        return jsonify({'error': 'New password must be at least 6 characters'}), 400
+    
+    is_strong, msg = is_password_strong(new_password)
+    if not is_strong:
+        return jsonify({'error': msg}), 400
 
     user.set_password(new_password)
     db.session.commit()

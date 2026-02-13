@@ -155,8 +155,10 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Password</label>
-                        <input id="newPassword" type="password" placeholder="Min 6 characters"
+                        <input id="newPassword" type="password" placeholder="Complexity: 10+ chars, A-Z, a-z, 0-9"
                             class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Mínimo 10 caracteres, incluyendo
+                            Mayúscula, Minúscula y Número.</p>
                     </div>
                     <div id="createUserError" class="text-red-500 text-sm hidden"></div>
                     <div class="flex justify-end space-x-3">
@@ -182,8 +184,10 @@
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium mb-1">New Password</label>
-                        <input id="resetNewPassword" type="password" placeholder="Min 6 characters"
+                        <input id="resetNewPassword" type="password" placeholder="Complexity: 10+ chars, A-Z, a-z, 0-9"
                             class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Mínimo 10 caracteres, incluyendo
+                            Mayúscula, Minúscula y Número.</p>
                     </div>
                     <div id="resetPasswordError" class="text-red-500 text-sm hidden"></div>
                     <div class="flex justify-end space-x-3">
@@ -325,13 +329,23 @@
             document.getElementById('createUserModal').classList.add('hidden');
         }
 
+        function validatePassword(pass) {
+            if (pass.length < 10) return "Password must be at least 10 characters long.";
+            if (!/[A-Z]/.test(pass)) return "Password must contain at least one uppercase letter.";
+            if (!/[a-z]/.test(pass)) return "Password must contain at least one lowercase letter.";
+            if (!/[0-9]/.test(pass)) return "Password must contain at least one digit.";
+            return null;
+        }
+
         async function createUser() {
             const username = document.getElementById('newUsername').value.trim();
             const password = document.getElementById('newPassword').value;
             const errEl = document.getElementById('createUserError');
 
             if (!username || !password) { errEl.textContent = 'Both fields are required.'; errEl.classList.remove('hidden'); return; }
-            if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.classList.remove('hidden'); return; }
+
+            const passErr = validatePassword(password);
+            if (passErr) { errEl.textContent = passErr; errEl.classList.remove('hidden'); return; }
 
             try {
                 const res = await fetch('/admin/users', {
@@ -364,7 +378,8 @@
             const password = document.getElementById('resetNewPassword').value;
             const errEl = document.getElementById('resetPasswordError');
 
-            if (!password || password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.classList.remove('hidden'); return; }
+            const passErr = validatePassword(password);
+            if (passErr) { errEl.textContent = passErr; errEl.classList.remove('hidden'); return; }
 
             try {
                 const res = await fetch(`/admin/users/${id}/reset-password`, {
