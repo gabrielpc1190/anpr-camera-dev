@@ -331,20 +331,7 @@ with app.app_context():
         db.session.rollback()
         # Column already exists, no action needed
 
-    # Migrate existing users: set role='admin' for users that currently have 'viewer' (default)
-    # This ensures pre-existing users become admins
-    try:
-        result = db.session.execute(db.text(
-            "UPDATE user SET role = 'admin' WHERE role = 'viewer' OR role = '' OR role IS NULL"
-        ))
-        if result.rowcount > 0:
-            db.session.commit()
-            print(f"Migrated {result.rowcount} existing user(s) to admin role.")
-        else:
-            db.session.rollback()
-    except Exception as e:
-        db.session.rollback()
-        print(f"Role migration note: {e}")
+
 
 
 if __name__ == '__main__':
