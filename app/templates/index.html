@@ -343,8 +343,8 @@
             if (data && data.cameras) {
                 data.cameras.forEach(camera => {
                     const option = document.createElement('option');
-                    option.value = camera;
-                    option.textContent = camera;
+                    option.value = camera.id;
+                    option.textContent = camera.friendly_name;
                     cameraSelect.appendChild(option);
                 });
             }
@@ -424,7 +424,7 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.vehicle_type)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(processedData.VehicleColor)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.driving_direction)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.camera_id)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.camera_friendly_name)}</td>
                 `;
                 eventsTableBody.appendChild(row);
             });

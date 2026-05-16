@@ -104,7 +104,126 @@ def initialize_database():
         # --- AÑADIR ESTA LÍNEA ---
         logger.info("Ensuring 'driving_direction' column exists...")
         cursor.execute("ALTER TABLE anpr_events ADD COLUMN IF NOT EXISTS driving_direction VARCHAR(50)")
-        
+
+        # --- F2.1: CREATE cameras TABLE ---
+        logger.info("Ensuring 'cameras' table exists...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cameras (
+                id INT PRIMARY KEY,
+                friendly_name VARCHAR(255) NOT NULL UNIQUE,
+                ip_address VARCHAR(45),
+                port INT,
+                enabled BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """)
+
+        # --- F2.1: RENAME camera_id -> camera_friendly_name (idempotent) ---
+        logger.info("Checking if 'camera_friendly_name' column already exists in anpr_events...")
+        cursor.execute("""
+            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'anpr_events' AND COLUMN_NAME = 'camera_friendly_name'
+        """)
+        col_exists = cursor.fetchone()
+        if col_exists is None:
+            logger.info("Renaming column 'camera_id' -> 'camera_friendly_name' in anpr_events...")
+            cursor.execute("ALTER TABLE anpr_events CHANGE COLUMN camera_id camera_friendly_name VARCHAR(255)")
+        else:
+            logger.info("Column 'camera_friendly_name' already exists, skipping rename.")
+
+        # --- F2.1: ADD new camera_id INT NULL column ---
+        logger.info("Ensuring new 'camera_id' INT column exists in anpr_events...")
+        cursor.execute("ALTER TABLE anpr_events ADD COLUMN IF NOT EXISTS camera_id INT NULL AFTER plate_number")
+
+        # --- F2.1: SYNC cameras table from config.ini ---
+        logger.info("Syncing cameras table from config.ini...")
+        default_port = config.getint('DahuaSDK', 'DefaultPort', fallback=37777)
+        camera_ids_in_config = []
+
+        for section in config.sections():
+            if not section.startswith('Camera.'):
+                continue
+            enabled_str = config.get(section, 'Enabled', fallback='true').strip().lower()
+            cam_enabled = enabled_str == 'true'
+            cam_id = config.getint(section, 'Id', fallback=None)
+            friendly_name = config.get(section, 'FriendlyName', fallback=None)
+            ip_address = config.get(section, 'IPAddress', fallback=None)
+            port = config.getint(section, 'Port', fallback=default_port)
+
+            if cam_id is None or friendly_name is None:
+                logger.warning(f"Section [{section}] missing Id or FriendlyName, skipping.")
+                continue
+
+            camera_ids_in_config.append(cam_id)
+            cursor.execute("""
+                INSERT INTO cameras (id, friendly_name, ip_address, port, enabled)
+                VALUES (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    friendly_name = VALUES(friendly_name),
+                    ip_address = VALUES(ip_address),
+                    port = VALUES(port),
+                    enabled = VALUES(enabled)
+            """, (cam_id, friendly_name, ip_address, port, cam_enabled))
+            logger.info(f"Upserted camera id={cam_id} friendly_name='{friendly_name}' enabled={cam_enabled}")
+
+        # Disable cameras in DB that are not in config
+        if camera_ids_in_config:
+            placeholders = ', '.join(['%s'] * len(camera_ids_in_config))
+            cursor.execute(
+                f"UPDATE cameras SET enabled = FALSE WHERE id NOT IN ({placeholders})",
+                camera_ids_in_config
+            )
+            logger.info(f"Marked cameras not in config as disabled (config ids: {camera_ids_in_config})")
+
+        # --- F3: BACKFILL camera_id from cameras table ---
+        logger.info("Backfilling camera_id in anpr_events via JOIN on cameras.friendly_name...")
+        cursor.execute("""
+            UPDATE anpr_events e
+            JOIN cameras c ON c.friendly_name = e.camera_friendly_name
+            SET e.camera_id = c.id
+            WHERE e.camera_id IS NULL
+        """)
+        rows_updated = cursor.rowcount
+        logger.info(f"Backfill complete: {rows_updated} rows updated.")
+
+        cursor.execute("SELECT COUNT(*) FROM anpr_events WHERE camera_id IS NULL")
+        remaining_nulls = cursor.fetchone()[0]
+        logger.info(f"Remaining anpr_events rows with camera_id IS NULL: {remaining_nulls}")
+
+        # --- F3: ADD INDEX idx_camera_id (idempotent) ---
+        logger.info("Checking if index 'idx_camera_id' exists on anpr_events...")
+        cursor.execute("""
+            SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'anpr_events' AND INDEX_NAME = 'idx_camera_id'
+        """)
+        index_exists = cursor.fetchone()
+        if index_exists is None:
+            logger.info("Index 'idx_camera_id' not found, creating...")
+            cursor.execute("CREATE INDEX idx_camera_id ON anpr_events (camera_id)")
+            logger.info("Index 'idx_camera_id' created.")
+        else:
+            logger.info("Index 'idx_camera_id' already exists, skipping.")
+
+        # --- F3: ADD FK CONSTRAINT fk_anpr_events_camera (idempotent) ---
+        logger.info("Checking if FK constraint 'fk_anpr_events_camera' exists on anpr_events...")
+        cursor.execute("""
+            SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'anpr_events'
+              AND CONSTRAINT_NAME = 'fk_anpr_events_camera'
+        """)
+        fk_exists = cursor.fetchone()
+        if fk_exists is None:
+            logger.info("FK constraint 'fk_anpr_events_camera' not found, creating...")
+            cursor.execute("""
+                ALTER TABLE anpr_events
+                ADD CONSTRAINT fk_anpr_events_camera
+                FOREIGN KEY (camera_id) REFERENCES cameras(id)
+            """)
+            logger.info("FK constraint 'fk_anpr_events_camera' created.")
+        else:
+            logger.info("FK constraint 'fk_anpr_events_camera' already exists, skipping.")
+
         conn.commit()
         TABLE_INITIALIZED = True
         logger.info("Database schema is up to date.")
@@ -178,12 +297,32 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
     try:
         cursor = db_conn.cursor()
         plate_number = event_data.get("PlateNumber")
-        camera_id = event_data.get("CameraID")
+
+        # Read new INT camera_id field (CameraId with capital I, lowercase d)
+        raw_camera_id = event_data.get("CameraId")
+        try:
+            camera_id = int(raw_camera_id) if raw_camera_id is not None else None
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid CameraId in event_data: {raw_camera_id}. Setting to NULL.")
+            camera_id = None
+
+        # Read legacy friendly name (CameraID with capital ID)
+        camera_friendly_name = event_data.get("CameraID")
+
+        # Defensive FK check: verify camera_id exists in cameras table
+        if camera_id is not None:
+            check_cursor = db_conn.cursor()
+            check_cursor.execute("SELECT 1 FROM cameras WHERE id = %s", (camera_id,))
+            if not check_cursor.fetchone():
+                logger.warning(f"CameraId {camera_id} not in cameras table. Setting to NULL to avoid FK violation.")
+                camera_id = None
+            check_cursor.close()
+
         timestamp_str = event_data.get("EventTimeUTC")
         confidence = event_data.get("Confidence", None)
         vehicle_type = event_data.get("VehicleType", "Unknown")
         access_status = event_data.get("AccessStatus", "Unknown")
-        driving_direction = event_data.get("DrivingDirection", "Unknown") # <-- Añadir esta línea
+        driving_direction = event_data.get("DrivingDirection", "Unknown")
 
         if timestamp_str is None:
             logger.error("Timestamp string is None. Cannot convert to datetime.")
@@ -195,15 +334,15 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
             return False
 
         sql = """
-            INSERT INTO anpr_events (plate_number, camera_id, timestamp, image_filename, confidence, processed_data, vehicle_type, access_status, driving_direction)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO anpr_events (plate_number, camera_id, camera_friendly_name, timestamp, image_filename, confidence, processed_data, vehicle_type, access_status, driving_direction)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        val = (plate_number, camera_id, timestamp_obj, image_filename, confidence, json.dumps(event_data), vehicle_type, access_status, driving_direction)
-        
+        val = (plate_number, camera_id, camera_friendly_name, timestamp_obj, image_filename, confidence, json.dumps(event_data), vehicle_type, access_status, driving_direction)
+
         cursor.execute(sql, val)
         last_id = cursor.lastrowid
         db_conn.commit()
-        logger.info(f"Event for plate '{plate_number}' (Direction: {driving_direction}) inserted successfully. DB Row ID: {last_id}")
+        logger.info(f"Event for plate '{plate_number}' (camera_id={camera_id}, friendly_name='{camera_friendly_name}', direction: {driving_direction}) inserted successfully. DB Row ID: {last_id}")
         return True
     except mysql.connector.Error as err:
         logger.error(f"Error inserting event into database: {err}", exc_info=True)
@@ -221,7 +360,7 @@ def get_events():
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 10, type=int)
     plate_number = request.args.get('plate_number', type=str)
-    camera_id = request.args.get('camera_id', type=str)
+    camera_id_param = request.args.get('camera_id', type=str)
     start_date_str = request.args.get('start_date', type=str)
     end_date_str = request.args.get('end_date', type=str)
     start_time_str = request.args.get('start_time', type=str)
@@ -243,9 +382,16 @@ def get_events():
     if plate_number:
         where_clauses.append("plate_number LIKE %s")
         query_params.append(f"%{plate_number}%")
-    if camera_id:
-        where_clauses.append("camera_id = %s")
-        query_params.append(camera_id)
+    if camera_id_param:
+        # Try parsing as int (primary path — new FK)
+        try:
+            camera_id_int = int(camera_id_param)
+            where_clauses.append("camera_id = %s")
+            query_params.append(camera_id_int)
+        except ValueError:
+            # Fallback: client sent a friendly_name string (backward compat)
+            where_clauses.append("camera_friendly_name = %s")
+            query_params.append(camera_id_param)
     
     # Filtro de fecha/hora de inicio
     if start_date_str:
@@ -288,7 +434,7 @@ def get_events():
         
     count_query = "SELECT COUNT(*) " + base_query
     # La consulta SELECT ya incluye todas las columnas necesarias
-    sql_query = f"SELECT id, plate_number, camera_id, timestamp, image_filename, confidence, processed_data, vehicle_type, access_status, driving_direction {base_query}"
+    sql_query = f"SELECT id, plate_number, camera_id, camera_friendly_name, timestamp, image_filename, confidence, processed_data, vehicle_type, access_status, driving_direction {base_query}"
     
     try:
         count_cursor = conn.cursor()
@@ -330,12 +476,17 @@ def get_cameras():
     if not conn: abort(503, description="Database connection unavailable")
     cursor = None
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT camera_id FROM anpr_events WHERE camera_id IS NOT NULL AND camera_id != '' ORDER BY camera_id")
-        cameras = [row[0] for row in cursor.fetchall()]
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT id, friendly_name, ip_address, port
+            FROM cameras
+            WHERE enabled = TRUE
+            ORDER BY friendly_name
+        """)
+        cameras = cursor.fetchall()
         return jsonify({"cameras": cameras})
     except mysql.connector.Error as err:
-        logger.error(f"Error fetching camera IDs: {err}", exc_info=True)
+        logger.error(f"Error fetching cameras: {err}", exc_info=True)
         return jsonify({"cameras": []}), 500
     finally:
         if cursor: cursor.close()
