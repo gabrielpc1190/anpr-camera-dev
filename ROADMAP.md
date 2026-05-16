@@ -42,7 +42,14 @@
 ### Near Term
 - [ ] Email/Telegram notifications for specific license plate alerts.
 - [ ] Real-time Dashboard updates via WebSockets.
-- [ ] Log rotation and automatic disk cleanup for images.
+- [ ] **Phase 6: Tiered image retention with Backblaze B2 archival**.
+  Disk pressure is real: `app/anpr_images/` grows ~14 GB/month and would exhaust the 196 GB disk in ~4 months at current rate. Design (to be implemented soon):
+  - **Tier 1 (months 0-12)**: keep images on local disk in original quality. Steady-state ~168 GB.
+  - **Tier 2 (months 13-24)**: archive to Backblaze B2 (cloud object storage). Local file is removed after successful upload; DB row keeps `image_filename` plus a new column indicating remote location.
+  - **Tier 3 (>24 months)**: definitive deletion (subject to confirmation when implementing).
+  - Cleanup/archival runs as a scheduled job (cron or container service, TBD during spec).
+  - DB rows in `anpr_events` are preserved across all tiers — only the binary image moves/disappears. Dashboard fetches old images transparently from B2 when needed.
+- [ ] Log rotation for application logs (`anpr_listener.log`, `anpr_db_manager.log`).
 
 ### Long Term
 - [ ] Multi-tenant support for different sites.
