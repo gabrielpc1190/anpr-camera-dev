@@ -18,6 +18,8 @@ The system is designed to be robust and resilient, with automatic recovery mecha
     *   **Physical Vehicle Type**: (e.g., "MotorVehicle").
     *   **Direction of Movement**: (e.g., "Approaching", "Leaving").
     *   **Access Status**: (e.g., "Normal Car", "Trust Car").
+*   **Per-Camera Unique Identity**: Each camera is assigned a stable integer `Id` in `config.ini`, stored as primary key in a dedicated `cameras` table and as a foreign key in every event row. Camera attribution no longer depends on `FriendlyName` uniqueness.
+*   **NAT / Shared-IP Support**: Multiple cameras behind the same public IP (distinguished by port forwarding) are correctly identified via per-camera callback closures — the system does not rely on SDK handles to attribute events.
 
 ## 3. System Architecture
 

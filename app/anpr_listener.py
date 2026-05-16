@@ -72,12 +72,12 @@ def _process_event(cam_info, alarm_info, pBuffer, dwBufSize):
     camera_id = cam_info["Id"]
     camera_friendly_name = cam_info["FriendlyName"]
 
+    utc = alarm_info.UTC
+    event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
     image_filepath = None
     try:
         if pBuffer and dwBufSize > 0:
             plate_number_for_file = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
-            utc = alarm_info.UTC
-            event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
             time_str = event_time.strftime("%Y%m%d_%H%M%S")
             # Include camera_id in temp filename to avoid collisions when several cameras share an IP via NAT
             filename = f"temp_{time_str}_cam{camera_id}_{plate_number_for_file}.jpg"
@@ -90,8 +90,6 @@ def _process_event(cam_info, alarm_info, pBuffer, dwBufSize):
             return
 
         plate_number = alarm_info.stTrafficCar.szPlateNumber.decode('gb2312', errors='ignore').strip()
-        utc = alarm_info.UTC
-        event_time = datetime.datetime(utc.dwYear, utc.dwMonth, utc.dwDay, utc.dwHour, utc.dwMinute, utc.dwSecond)
 
         access_status_map = {0: "Unknown", 1: "Trust Car", 2: "Suspicious Car", 3: "Normal Car"}
         access_status_code = getattr(alarm_info.stTrafficCar, 'emCarType', 0)
@@ -256,9 +254,13 @@ def main():
         camera_ip = config.get(section, 'IPAddress')
         camera_port = config.getint(section, 'Port', fallback=default_port)
         friendly_name = config.get(section, 'FriendlyName', fallback=section.split('.', 1)[1])
-        # Id is REQUIRED — it's the internal unique identifier we control end-to-end.
-        # Section name fallback (e.g. CAM3) preserves backward-compat for existing configs.
-        camera_id = config.get(section, 'Id', fallback=section.split('.', 1)[1])
+        # Id is REQUIRED (integer) — it's the internal unique identifier and FK in the cameras table.
+        # Missing or non-integer Id is a misconfiguration: skip the camera and log clearly.
+        try:
+            camera_id = config.getint(section, 'Id')
+        except (configparser.NoOptionError, ValueError) as exc:
+            logger.error(f"[{section}] Missing or invalid 'Id' ({exc}). Id must be an integer. Skipping camera.")
+            continue
 
         if camera_id in seen_ids:
             logger.error(f"Duplicate camera Id '{camera_id}' in [{section}]. Skipping. Fix config.ini.")

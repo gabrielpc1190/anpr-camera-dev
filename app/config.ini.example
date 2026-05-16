@@ -28,10 +28,20 @@ DefaultPort = 37777
 # Individual Camera Configurations for anpr_listener.py
 #-------------------------------------------------------------------------------
 # Use sections starting with "Camera." e.g., [Camera.CAM1], [Camera.FrontGate]
-# The part after "Camera." is used as a camera identifier/key.
+# The part after "Camera." is a human-readable section key only.
+#
+# REQUIRED FIELDS per camera:
+#   Id           - Unique integer identifier for this camera (PRIMARY KEY in the
+#                  cameras table and FK in anpr_events). Must be a positive integer,
+#                  unique across all enabled cameras. Do NOT reuse or change Ids
+#                  once events have been recorded — historical rows reference it.
+#   IPAddress    - IP address or hostname of the camera (or its NAT gateway).
+#   FriendlyName - Human-readable display name (must also be unique).
+#   Enabled      - true/false. Only true sections are loaded at startup.
 
 [Camera.CAM1]
 Enabled = true
+Id = 1
 IPAddress = 10.45.14.11
 FriendlyName = Front Gate Cam
 # Optional: Override defaults from [DahuaSDK] if needed for this specific camera
@@ -42,13 +52,32 @@ FriendlyName = Front Gate Cam
 
 [Camera.CAM2]
 Enabled = true
+Id = 2
 IPAddress = 10.45.14.12
 FriendlyName = Back Gate Cam
 # This camera will use DefaultUsername, DefaultPassword, DefaultPort from [DahuaSDK]
 # Channel = 0
 
+# Example: two cameras behind the same NAT IP, distinguished by port forwarding.
+# The listener connects to <IPAddress>:<Port> for each — the ONU/modem forwards
+# WAN:1177 → CAM_A:37777 and WAN:1277 → CAM_B:37777.
+# [Camera.NAT_CAM_A]
+# Enabled = true
+# Id = 3
+# IPAddress = 10.49.9.50
+# Port = 1177
+# FriendlyName = Site A - Gate 1
+#
+# [Camera.NAT_CAM_B]
+# Enabled = true
+# Id = 4
+# IPAddress = 10.49.9.50
+# Port = 1277
+# FriendlyName = Site A - Gate 2
+
 [Camera.DisabledExample]
 Enabled = false
+Id = 99
 IPAddress = 192.168.1.200
 FriendlyName = Office Cam (Disabled)
 Username = testuser

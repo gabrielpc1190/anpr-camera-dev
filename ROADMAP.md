@@ -28,6 +28,15 @@
 - UI security hints and frontend validation.
 - Legacy role migration removal.
 
+### Phase 5: Camera Identity Refactor (v2.4)
+- **Per-camera callback closures** (`make_analyzer_callback` factory): each camera gets a dedicated ctypes callback bound by closure, eliminating event mis-attribution when cameras share an external IP via NAT/port-forwarding.
+- **`cameras` table**: new MariaDB table (id INT PK, friendly_name, ip_address, port) synced from `config.ini` at db-manager startup.
+- **`camera_id` INT FK** in `anpr_events`: `camera_id` column renamed to `camera_friendly_name` (preserves history); new `camera_id INT NULL FK → cameras.id` added with index `idx_camera_id` and constraint `fk_anpr_events_camera`. 115 461 historical rows backfilled via JOIN.
+- **API updated**: `GET /api/cameras` now reads from the `cameras` table; `GET /api/events` returns both `camera_id` (INT) and `camera_friendly_name` (string); `POST /event` writes both columns with FK validation.
+- **UI updated**: camera dropdown value is integer `cam.id`; event rows display `camera_friendly_name`.
+- **`Id` field required** in `[Camera.X]` config sections; listener validates it as integer at startup and skips misconfigured cameras with a clear error log.
+- Resolves production bug: two Dahua cameras behind shared NAT IP (10.49.9.50, ports 1177/1277) were mis-attributed because the SDK does not reliably distinguish subscriptions by handle when cameras share an external IP.
+
 ## 🔜 Future Vision
 
 ### Near Term
