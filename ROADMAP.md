@@ -40,7 +40,7 @@
 ## 🔜 Future Vision
 
 ### Near Term
-- [ ] Email/Telegram notifications for specific license plate alerts.
+- [ ] **Plate watchlist with Telegram notifications**: maintain a list of "plates of interest" (managed via admin UI or DB). When the listener detects a plate that matches an entry in the list, send a Telegram message in real time with the plate, camera, timestamp, and image. Includes deduplication (same plate in same camera within N seconds is one notification), admin management of the list, and an audit log of notifications sent.
 - [ ] Real-time Dashboard updates via WebSockets.
 - [ ] **Phase 6: Tiered image retention with Backblaze B2 archival**.
   Disk pressure is real: `app/anpr_images/` grows ~14 GB/month and would exhaust the 196 GB disk in ~4 months at current rate. Design (to be implemented soon):
