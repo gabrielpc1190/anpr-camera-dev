@@ -37,6 +37,13 @@
 - **`Id` field required** in `[Camera.X]` config sections; listener validates it as integer at startup and skips misconfigured cameras with a clear error log.
 - Resolves production bug: two Dahua cameras behind shared NAT IP (10.49.9.50, ports 1177/1277) were mis-attributed because the SDK does not reliably distinguish subscriptions by handle when cameras share an external IP.
 
+## 🔍 Open Field Investigations
+
+See [`docs/field-investigations.md`](docs/field-investigations.md) for active anomalies that need on-site or in-camera-UI verification (not code changes):
+
+- **CAM3 vs CAM4 detection asymmetry (Fase 5)** — CAM4 logs ~2.24× more events than CAM3. Ruled out as SDK/network issue; likely IVS/ROI/physical-encuadre difference. Verify in camera UI next session.
+- **`confidence = 0` in all Fase 5 plate events** — listener reads `nConfidence` from SDK, but Fase 5 cameras don't populate it (possibly firmware-related). Cosmetic but worth understanding.
+
 ## 🔜 Future Vision
 
 ### Near Term
