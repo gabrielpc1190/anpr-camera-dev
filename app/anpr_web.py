@@ -45,6 +45,30 @@ sess = Session(app)
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# --- Helpers ---
+def get_allowed_camera_ids(user):
+    """Return the list of camera_ids a viewer can access.
+
+    Returns:
+        None  -> admin (no filter)
+        []    -> viewer without any group assignments (sees nothing)
+        [int, ...] -> viewer with assignments
+    """
+    if user is None or not user.is_authenticated:
+        return []
+    if user.is_admin:
+        return None
+    result = db.session.execute(
+        db.text(
+            "SELECT DISTINCT cgm.camera_id "
+            "FROM camera_group_members cgm "
+            "JOIN user_camera_groups ucg ON ucg.group_id = cgm.group_id "
+            "WHERE ucg.user_id = :uid"
+        ),
+        {"uid": user.id}
+    )
+    return sorted(int(row[0]) for row in result)
+
 # --- Decorators ---
 def admin_required(f):
     """Decorator that ensures the current user is an admin."""
@@ -325,6 +349,86 @@ def delete_viewer_user(user_id):
     db.session.commit()
     return jsonify({'status': 'ok', 'message': f'User "{username}" deleted'})
 
+
+# ------------------ Admin: camera groups CRUD ------------------
+
+@app.route('/admin/camera-groups', methods=['GET'])
+@admin_required
+def admin_list_camera_groups():
+    return _proxy_to_db_manager('GET', '/api/admin/camera-groups')
+
+
+@app.route('/admin/camera-groups', methods=['POST'])
+@admin_required
+def admin_create_camera_group():
+    return _proxy_to_db_manager('POST', '/api/admin/camera-groups', request.get_json(silent=True))
+
+
+@app.route('/admin/camera-groups/<int:group_id>', methods=['GET'])
+@admin_required
+def admin_get_camera_group(group_id):
+    return _proxy_to_db_manager('GET', f'/api/admin/camera-groups/{group_id}')
+
+
+@app.route('/admin/camera-groups/<int:group_id>', methods=['PUT'])
+@admin_required
+def admin_update_camera_group(group_id):
+    return _proxy_to_db_manager('PUT', f'/api/admin/camera-groups/{group_id}', request.get_json(silent=True))
+
+
+@app.route('/admin/camera-groups/<int:group_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_camera_group(group_id):
+    return _proxy_to_db_manager('DELETE', f'/api/admin/camera-groups/{group_id}')
+
+
+@app.route('/admin/camera-groups/<int:group_id>/cameras', methods=['GET'])
+@admin_required
+def admin_list_group_cameras(group_id):
+    return _proxy_to_db_manager('GET', f'/api/admin/camera-groups/{group_id}/cameras')
+
+
+@app.route('/admin/camera-groups/<int:group_id>/cameras', methods=['PUT'])
+@admin_required
+def admin_set_group_cameras(group_id):
+    return _proxy_to_db_manager('PUT', f'/api/admin/camera-groups/{group_id}/cameras', request.get_json(silent=True))
+
+
+@app.route('/admin/users/<int:user_id>/camera-groups', methods=['GET'])
+@admin_required
+def admin_list_user_camera_groups(user_id):
+    return _proxy_to_db_manager('GET', f'/api/admin/users/{user_id}/camera-groups')
+
+
+@app.route('/admin/users/<int:user_id>/camera-groups', methods=['PUT'])
+@admin_required
+def admin_set_user_camera_groups(user_id):
+    return _proxy_to_db_manager('PUT', f'/api/admin/users/{user_id}/camera-groups', request.get_json(silent=True))
+
+
+def _proxy_to_db_manager(method, path_suffix, json_body=None):
+    """Internal helper: forward request to db-manager and return its response.
+
+    Used by /admin/camera-groups/* endpoints which have @admin_required but
+    need to hit the corresponding /api/admin/... endpoint on the db-manager.
+    """
+    url = f"{DB_MANAGER_API_URL}{path_suffix}"
+    try:
+        if method == 'GET':
+            r = requests.get(url, timeout=10)
+        elif method == 'POST':
+            r = requests.post(url, json=json_body, timeout=10)
+        elif method == 'PUT':
+            r = requests.put(url, json=json_body, timeout=10)
+        elif method == 'DELETE':
+            r = requests.delete(url, timeout=10)
+        else:
+            return jsonify({"error": f"unsupported method {method}"}), 405
+        return r.content, r.status_code, {'Content-Type': r.headers.get('Content-Type', 'application/json')}
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"db-manager unreachable: {e}"}), 503
+
+
 # --- API Proxy Routes ---
 
 @app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
@@ -339,9 +443,18 @@ def api_proxy(path):
 
     url = f"{DB_MANAGER_API_URL}/api/{path}"
 
-    # Forward query parameters
+    # Build query string: forward client params + inject allowed_camera_ids for viewers.
+    from urllib.parse import urlencode
+    forwarded_params = []
     if request.query_string:
-        url += f"?{request.query_string.decode('utf-8')}"
+        forwarded_params.append(request.query_string.decode('utf-8'))
+    if current_user.is_authenticated and not current_user.is_admin:
+        allowed = get_allowed_camera_ids(current_user)
+        # allowed is [] (empty list) for viewers without groups; send empty param so db-manager
+        # treats it as "deny all" rather than "no filter".
+        forwarded_params.append(urlencode({"allowed_camera_ids": ",".join(str(i) for i in allowed)}))
+    if forwarded_params:
+        url += "?" + "&".join(forwarded_params)
 
     try:
         # Forward the request to DB Manager
@@ -363,8 +476,28 @@ def api_proxy(path):
 @app.route('/images/<path:filename>')
 @login_required
 def serve_image(filename):
-    """Serve images from the anpr_images directory."""
+    """Serve images from the anpr_images directory, gated by group access for viewers."""
     images_dir = '/app/anpr_images'
+
+    # Admin: serve unconditionally
+    if current_user.is_admin:
+        return send_from_directory(images_dir, filename)
+
+    # Viewer: look up the event's camera_id and check it's in allowed list
+    allowed = get_allowed_camera_ids(current_user)
+    if not allowed:
+        abort(403)
+
+    row = db.session.execute(
+        db.text("SELECT camera_id FROM anpr_events WHERE image_filename = :fn LIMIT 1"),
+        {"fn": filename}
+    ).fetchone()
+    if row is None:
+        abort(404)
+    camera_id = row[0]
+    if camera_id is None or camera_id not in allowed:
+        abort(403)
+
     return send_from_directory(images_dir, filename)
 
 # --- Database Initialization ---

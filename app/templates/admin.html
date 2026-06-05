@@ -75,6 +75,10 @@
                 class="pb-3 px-2 text-sm sm:text-base cursor-pointer tab-inactive transition-colors">
                 👥 Viewer Users
             </button>
+            <button id="tabGroups" onclick="switchTab('groups')"
+                class="pb-3 px-2 text-sm sm:text-base cursor-pointer tab-inactive transition-colors">
+                📂 Grupos
+            </button>
         </div>
 
         <!-- Sessions Tab -->
@@ -144,6 +148,66 @@
             </div>
         </div>
 
+        <!-- ============ Tab: Groups ============ -->
+        <div id="panelGroups" class="hidden">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Grupos de cámaras</h2>
+                    <button onclick="showCreateGroupModal()"
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                        + Crear grupo
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead class="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Nombre</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Descripción</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Cámaras</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Viewers</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupsTableBody" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                            <tr><td colspan="5" class="text-center p-6 text-gray-500">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ Modal: Crear/Editar Grupo ============ -->
+        <div id="groupModal" class="hidden fixed inset-0 modal-overlay flex items-center justify-center z-50">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4">
+                <h3 id="groupModalTitle" class="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">Crear grupo</h3>
+                <input type="hidden" id="groupModalId" value="">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre</label>
+                    <input type="text" id="groupModalName"
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        placeholder="Ej. Residencial X" maxlength="255">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descripción (opcional)</label>
+                    <textarea id="groupModalDescription" rows="2"
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        placeholder="Descripción libre"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cámaras en este grupo</label>
+                    <div id="groupModalCameras" class="border border-gray-300 dark:border-gray-600 rounded-md p-3 max-h-48 overflow-y-auto bg-white dark:bg-gray-700">
+                        <p class="text-gray-500 text-sm">Cargando cámaras...</p>
+                    </div>
+                </div>
+                <div id="groupModalError" class="hidden text-red-600 text-sm mb-3"></div>
+                <div class="flex justify-end space-x-2">
+                    <button onclick="hideGroupModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200">Cancelar</button>
+                    <button onclick="saveGroup()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md">Guardar</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Create User Modal -->
         <div id="createUserModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
@@ -160,6 +224,15 @@
                             class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
                         <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Mínimo 10 caracteres, incluyendo
                             Mayúscula, Minúscula y Número.</p>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grupos asignados</label>
+                        <div id="createUserModalGroups" class="border border-gray-300 dark:border-gray-600 rounded-md p-3 max-h-48 overflow-y-auto bg-white dark:bg-gray-700">
+                            <p class="text-gray-500 text-sm">Cargando grupos...</p>
+                        </div>
+                        <p id="createUserModalNoGroupsWarning" class="hidden mt-2 text-sm text-yellow-700 dark:text-yellow-400">
+                            ⚠️ Sin grupos asignados, este viewer no verá ninguna cámara.
+                        </p>
                     </div>
                     <div id="createUserError" class="text-red-500 text-sm hidden"></div>
                     <div class="flex justify-end space-x-3">
@@ -204,6 +277,36 @@
                 </div>
             </div>
         </div>
+
+        <!-- Edit User Groups Modal -->
+        <div id="editUserGroupsModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
+                <h3 class="text-lg font-bold mb-4">Grupos de <span id="editGroupsUserName" class="text-blue-500"></span></h3>
+                <input type="hidden" id="editGroupsUserId">
+                <div class="space-y-4">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grupos asignados</label>
+                        <div id="userModalGroups" class="border border-gray-300 dark:border-gray-600 rounded-md p-3 max-h-48 overflow-y-auto bg-white dark:bg-gray-700">
+                            <p class="text-gray-500 text-sm">Cargando grupos...</p>
+                        </div>
+                        <p id="userModalNoGroupsWarning" class="hidden mt-2 text-sm text-yellow-700 dark:text-yellow-400">
+                            ⚠️ Sin grupos asignados, este viewer no verá ninguna cámara.
+                        </p>
+                    </div>
+                    <div id="editUserGroupsError" class="text-red-500 text-sm hidden"></div>
+                    <div class="flex justify-end space-x-3">
+                        <button onclick="hideEditUserGroupsModal()"
+                            class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                            Cancelar
+                        </button>
+                        <button onclick="saveEditUserGroups()"
+                            class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                            Guardar grupos
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -211,11 +314,14 @@
         function switchTab(tab) {
             document.getElementById('panelSessions').classList.toggle('hidden', tab !== 'sessions');
             document.getElementById('panelUsers').classList.toggle('hidden', tab !== 'users');
+            document.getElementById('panelGroups').classList.toggle('hidden', tab !== 'groups');
             document.getElementById('tabSessions').className = `pb-3 px-2 text-sm sm:text-base cursor-pointer transition-colors ${tab === 'sessions' ? 'tab-active' : 'tab-inactive'}`;
             document.getElementById('tabUsers').className = `pb-3 px-2 text-sm sm:text-base cursor-pointer transition-colors ${tab === 'users' ? 'tab-active' : 'tab-inactive'}`;
+            document.getElementById('tabGroups').className = `pb-3 px-2 text-sm sm:text-base cursor-pointer transition-colors ${tab === 'groups' ? 'tab-active' : 'tab-inactive'}`;
 
             if (tab === 'sessions') loadSessions();
             if (tab === 'users') loadUsers();
+            if (tab === 'groups') loadGroups();
         }
 
         // --- Sessions ---
@@ -295,6 +401,10 @@
                         <td class="p-3 text-gray-500">${u.id}</td>
                         <td class="p-3 font-medium">${escHtml(u.username)}</td>
                         <td class="p-3 text-center space-x-2">
+                            <button onclick="showEditUserGroupsModal(${u.id}, '${escHtml(u.username)}')"
+                                class="text-blue-500 hover:text-blue-700 text-xs font-medium px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">
+                                📂 Grupos
+                            </button>
                             <button onclick="showResetPasswordModal(${u.id}, '${escHtml(u.username)}')"
                                 class="text-orange-500 hover:text-orange-700 text-xs font-medium px-2 py-1 rounded hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors">
                                 🔑 Reset Password
@@ -322,12 +432,13 @@
         }
 
         // --- Create User Modal ---
-        function showCreateUserModal() {
+        async function showCreateUserModal() {
             document.getElementById('createUserModal').classList.remove('hidden');
             document.getElementById('newUsername').value = '';
             document.getElementById('newPassword').value = '';
             document.getElementById('createUserError').classList.add('hidden');
             document.getElementById('newUsername').focus();
+            await renderUserGroupCheckboxes(new Set(), 'createUserModalGroups', 'createUserModalNoGroupsWarning', 'create-user-group-cb');
         }
         function hideCreateUserModal() {
             document.getElementById('createUserModal').classList.add('hidden');
@@ -359,7 +470,14 @@
                 });
                 const data = await res.json();
                 if (!res.ok) { errEl.textContent = data.error || 'Failed'; errEl.classList.remove('hidden'); return; }
+                const newUserId = data.user ? data.user.id : data.id;
                 hideCreateUserModal();
+                // After user created, save group assignments
+                try {
+                    await saveUserGroupAssignments(newUserId, 'create-user-group-cb');
+                } catch (e) {
+                    alert(`Usuario creado, pero error asignando grupos: ${String(e.message || e)}`);
+                }
                 loadUsers();
             } catch (e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
         }
@@ -398,6 +516,94 @@
             } catch (e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
         }
 
+        // --- User Group Assignment ---
+        let cachedAllGroups = null;
+
+        async function ensureAllGroupsList() {
+            if (cachedAllGroups) return cachedAllGroups;
+            const res = await fetch('/admin/camera-groups');
+            const data = await res.json();
+            cachedAllGroups = data.groups || [];
+            return cachedAllGroups;
+        }
+
+        async function renderUserGroupCheckboxes(checkedIds, containerId, warningId, cbClass) {
+            const allGroups = await ensureAllGroupsList();
+            const container = document.getElementById(containerId);
+            const warningEl = document.getElementById(warningId);
+            if (allGroups.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">No hay grupos creados aún. Crea grupos en la pestaña "Grupos" antes de asignar.</p>';
+                warningEl.classList.add('hidden');
+                return;
+            }
+            container.innerHTML = allGroups.map(g => `
+                <label class="flex items-center space-x-2 mb-1">
+                    <input type="checkbox" class="${cbClass}" value="${g.id}" ${checkedIds.has(g.id) ? 'checked' : ''} onchange="updateUserGroupsWarning('${cbClass}', '${warningId}')">
+                    <span class="text-sm text-gray-800 dark:text-gray-100">${escHtml(g.name)}</span>
+                </label>
+            `).join('');
+            updateUserGroupsWarning(cbClass, warningId);
+        }
+
+        function updateUserGroupsWarning(cbClass, warningId) {
+            const checked = document.querySelectorAll(`.${cbClass}:checked`).length;
+            const warningEl = document.getElementById(warningId);
+            if (checked === 0) {
+                warningEl.classList.remove('hidden');
+            } else {
+                warningEl.classList.add('hidden');
+            }
+        }
+
+        async function fetchUserGroupAssignments(userId) {
+            const res = await fetch(`/admin/users/${userId}/camera-groups`);
+            const data = await res.json();
+            return new Set((data.groups || []).map(g => g.id));
+        }
+
+        async function saveUserGroupAssignments(userId, cbClass) {
+            const checkedIds = Array.from(document.querySelectorAll(`.${cbClass}:checked`))
+                .map(cb => parseInt(cb.value, 10));
+            const res = await fetch(`/admin/users/${userId}/camera-groups`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({group_ids: checkedIds})
+            });
+            if (!res.ok) {
+                const e = await res.json();
+                throw new Error(e.error || `HTTP ${res.status}`);
+            }
+        }
+
+        // --- Edit User Groups Modal ---
+        async function showEditUserGroupsModal(userId, username) {
+            document.getElementById('editUserGroupsModal').classList.remove('hidden');
+            document.getElementById('editGroupsUserId').value = userId;
+            document.getElementById('editGroupsUserName').textContent = username;
+            document.getElementById('editUserGroupsError').classList.add('hidden');
+            document.getElementById('userModalGroups').innerHTML = '<p class="text-gray-500 text-sm">Cargando grupos...</p>';
+            const checked = await fetchUserGroupAssignments(userId);
+            await renderUserGroupCheckboxes(checked, 'userModalGroups', 'userModalNoGroupsWarning', 'edit-user-group-cb');
+        }
+
+        function hideEditUserGroupsModal() {
+            document.getElementById('editUserGroupsModal').classList.add('hidden');
+        }
+
+        async function saveEditUserGroups() {
+            const userId = document.getElementById('editGroupsUserId').value;
+            const errEl = document.getElementById('editUserGroupsError');
+            errEl.classList.add('hidden');
+            try {
+                await saveUserGroupAssignments(userId, 'edit-user-group-cb');
+                hideEditUserGroupsModal();
+                loadUsers();
+            } catch (e) {
+                errEl.textContent = `Error guardando grupos: ${String(e.message || e)}`;
+                errEl.classList.remove('hidden');
+            }
+        }
+
         // --- Utilities ---
         function escHtml(str) {
             const div = document.createElement('div');
@@ -412,6 +618,177 @@
 
         // --- Init ---
         loadSessions();
+
+        // ============ Camera Groups (admin) ============
+
+        let cachedCameras = null;
+        let currentGroupCameras = new Set();
+
+        async function loadGroups() {
+            try {
+                const res = await fetch('/admin/camera-groups');
+                const data = await res.json();
+                const tbody = document.getElementById('groupsTableBody');
+                tbody.innerHTML = '';
+                if (!data.groups || data.groups.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center p-6 text-gray-500">No hay grupos creados aún.</td></tr>';
+                    return;
+                }
+                for (const g of data.groups) {
+                    const desc = g.description ? escHtml(g.description) : '<span class="text-gray-400 italic">—</span>';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="px-4 py-2 text-sm font-medium text-gray-900 dark:text-gray-100">${escHtml(g.name)}</td>
+                        <td class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">${desc}</td>
+                        <td class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">${g.camera_count}</td>
+                        <td class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">${g.user_count}</td>
+                        <td class="px-4 py-2 text-sm">
+                            <button class="text-blue-600 hover:underline mr-3" onclick="showEditGroupModal(${g.id})">Editar</button>
+                            <button class="text-red-600 hover:underline" onclick="deleteGroup(${g.id}, '${escHtml(g.name).replace(/'/g, "\\'")}')">Borrar</button>
+                        </td>`;
+                    tbody.appendChild(tr);
+                }
+            } catch (e) {
+                document.getElementById('groupsTableBody').innerHTML =
+                    `<tr><td colspan="5" class="text-center p-6 text-red-600">Error: ${escHtml(String(e))}</td></tr>`;
+            }
+        }
+
+        async function ensureCameraList() {
+            if (cachedCameras) return cachedCameras;
+            const res = await fetch('/api/cameras');
+            const data = await res.json();
+            cachedCameras = data.cameras || [];
+            return cachedCameras;
+        }
+
+        async function renderCameraCheckboxes(checkedIds) {
+            const cameras = await ensureCameraList();
+            const container = document.getElementById('groupModalCameras');
+            if (cameras.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">No hay cámaras configuradas.</p>';
+                return;
+            }
+            container.innerHTML = cameras.map(c => `
+                <label class="flex items-center space-x-2 mb-1">
+                    <input type="checkbox" class="camera-cb" value="${c.id}" ${checkedIds.has(c.id) ? 'checked' : ''}>
+                    <span class="text-sm text-gray-800 dark:text-gray-100">${escHtml(c.friendly_name)} <span class="text-gray-500">(${escHtml(c.ip_address || '')})</span></span>
+                </label>
+            `).join('');
+        }
+
+        async function showCreateGroupModal() {
+            document.getElementById('groupModalTitle').textContent = 'Crear grupo';
+            document.getElementById('groupModalId').value = '';
+            document.getElementById('groupModalName').value = '';
+            document.getElementById('groupModalDescription').value = '';
+            document.getElementById('groupModalError').classList.add('hidden');
+            currentGroupCameras = new Set();
+            await renderCameraCheckboxes(currentGroupCameras);
+            document.getElementById('groupModal').classList.remove('hidden');
+        }
+
+        async function showEditGroupModal(groupId) {
+            document.getElementById('groupModalTitle').textContent = 'Editar grupo';
+            document.getElementById('groupModalId').value = String(groupId);
+            document.getElementById('groupModalError').classList.add('hidden');
+            const [gRes, mRes] = await Promise.all([
+                fetch(`/admin/camera-groups/${groupId}`),
+                fetch(`/admin/camera-groups/${groupId}/cameras`)
+            ]);
+            const g = await gRes.json();
+            const m = await mRes.json();
+            document.getElementById('groupModalName').value = g.name || '';
+            document.getElementById('groupModalDescription').value = g.description || '';
+            currentGroupCameras = new Set((m.cameras || []).map(c => c.id));
+            await renderCameraCheckboxes(currentGroupCameras);
+            document.getElementById('groupModal').classList.remove('hidden');
+        }
+
+        function hideGroupModal() {
+            document.getElementById('groupModal').classList.add('hidden');
+        }
+
+        async function saveGroup() {
+            const id = document.getElementById('groupModalId').value;
+            const name = document.getElementById('groupModalName').value.trim();
+            const description = document.getElementById('groupModalDescription').value.trim() || null;
+            const errEl = document.getElementById('groupModalError');
+            if (!name) {
+                errEl.textContent = 'El nombre es requerido.';
+                errEl.classList.remove('hidden');
+                return;
+            }
+            errEl.classList.add('hidden');
+
+            // 1) Create or update the group itself
+            let groupId;
+            try {
+                if (id) {
+                    const res = await fetch(`/admin/camera-groups/${id}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({name, description})
+                    });
+                    if (!res.ok) {
+                        const e = await res.json();
+                        throw new Error(e.error || `HTTP ${res.status}`);
+                    }
+                    groupId = parseInt(id, 10);
+                } else {
+                    const res = await fetch('/admin/camera-groups', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({name, description})
+                    });
+                    if (!res.ok) {
+                        const e = await res.json();
+                        throw new Error(e.error || `HTTP ${res.status}`);
+                    }
+                    const j = await res.json();
+                    groupId = j.id;
+                }
+            } catch (e) {
+                errEl.textContent = `Error guardando grupo: ${String(e.message || e)}`;
+                errEl.classList.remove('hidden');
+                return;
+            }
+
+            // 2) Set cameras for the group
+            const checkedIds = Array.from(document.querySelectorAll('.camera-cb:checked')).map(cb => parseInt(cb.value, 10));
+            try {
+                const res = await fetch(`/admin/camera-groups/${groupId}/cameras`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({camera_ids: checkedIds})
+                });
+                if (!res.ok) {
+                    const e = await res.json();
+                    throw new Error(e.error || `HTTP ${res.status}`);
+                }
+            } catch (e) {
+                errEl.textContent = `Grupo guardado, pero error asignando cámaras: ${String(e.message || e)}`;
+                errEl.classList.remove('hidden');
+                return;
+            }
+
+            hideGroupModal();
+            loadGroups();
+        }
+
+        async function deleteGroup(groupId, name) {
+            if (!confirm(`¿Borrar grupo "${name}"? Los viewers que tengan SOLO este grupo asignado quedarán sin acceso.`)) return;
+            try {
+                const res = await fetch(`/admin/camera-groups/${groupId}`, {method: 'DELETE'});
+                if (!res.ok) {
+                    const e = await res.json();
+                    throw new Error(e.error || `HTTP ${res.status}`);
+                }
+                loadGroups();
+            } catch (e) {
+                alert(`Error borrando grupo: ${String(e.message || e)}`);
+            }
+        }
     </script>
 </body>
 

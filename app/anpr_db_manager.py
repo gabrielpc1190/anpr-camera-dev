@@ -224,6 +224,40 @@ def initialize_database():
         else:
             logger.info("FK constraint 'fk_anpr_events_camera' already exists, skipping.")
 
+        # --- Camera groups + access control (M:N relations) ---
+        logger.info("Ensuring 'camera_groups' table exists...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS camera_groups (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL UNIQUE,
+                description TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        logger.info("Ensuring 'camera_group_members' table exists...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS camera_group_members (
+                camera_id INT NOT NULL,
+                group_id INT NOT NULL,
+                PRIMARY KEY (camera_id, group_id),
+                FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE,
+                FOREIGN KEY (group_id) REFERENCES camera_groups(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        logger.info("Ensuring 'user_camera_groups' table exists...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_camera_groups (
+                user_id INT NOT NULL,
+                group_id INT NOT NULL,
+                PRIMARY KEY (user_id, group_id),
+                FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE,
+                FOREIGN KEY (group_id) REFERENCES camera_groups(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         conn.commit()
         TABLE_INITIALIZED = True
         logger.info("Database schema is up to date.")
@@ -351,6 +385,30 @@ def insert_anpr_event_db(event_data, image_filename, db_conn):
     finally:
         if cursor: cursor.close()
 
+def _parse_allowed_camera_ids():
+    """Parse 'allowed_camera_ids' query param into a filter mode.
+
+    Returns:
+        None  -> param absent (admin path, no filtering)
+        []    -> param present but empty (viewer without groups, deny all)
+        [int, ...] -> param present with values (filter to these ids)
+    """
+    if 'allowed_camera_ids' not in request.args:
+        return None
+    raw = request.args.get('allowed_camera_ids', '').strip()
+    if not raw:
+        return []
+    out = []
+    for token in raw.split(','):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            out.append(int(token))
+        except ValueError:
+            logger.warning(f"Ignoring invalid camera id in allowed_camera_ids: '{token}'")
+    return out
+
 @app.route('/api/events', methods=['GET'])
 def get_events():
     conn = get_db_connection()
@@ -377,7 +435,19 @@ def get_events():
     # --- Construir la consulta SQL dinámicamente ---
     query_params, where_clauses = [], []
     base_query = "FROM anpr_events"
-    
+
+    allowed = _parse_allowed_camera_ids()
+    if allowed is not None:
+        if not allowed:
+            # Viewer sin acceso a ninguna cámara: respuesta vacía rápida.
+            return jsonify({
+                "events": [], "total_pages": 0,
+                "current_page": page, "total_events": 0
+            })
+        placeholders = ','.join(['%s'] * len(allowed))
+        where_clauses.append(f"camera_id IN ({placeholders})")
+        query_params.extend(allowed)
+
     # Filtros existentes
     if plate_number:
         where_clauses.append("plate_number LIKE %s")
@@ -476,13 +546,23 @@ def get_cameras():
     if not conn: abort(503, description="Database connection unavailable")
     cursor = None
     try:
+        allowed = _parse_allowed_camera_ids()
+        if allowed is not None and not allowed:
+            return jsonify({"cameras": []})
+
+        where = ["enabled = TRUE"]
+        params = []
+        if allowed:
+            placeholders = ','.join(['%s'] * len(allowed))
+            where.append(f"id IN ({placeholders})")
+            params.extend(allowed)
+
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT id, friendly_name, ip_address, port
-            FROM cameras
-            WHERE enabled = TRUE
-            ORDER BY friendly_name
-        """)
+        cursor.execute(
+            f"SELECT id, friendly_name, ip_address, port "
+            f"FROM cameras WHERE {' AND '.join(where)} ORDER BY friendly_name",
+            params
+        )
         cameras = cursor.fetchall()
         return jsonify({"cameras": cameras})
     except mysql.connector.Error as err:
@@ -502,17 +582,32 @@ def get_latest_timestamp():
     
     cursor = None
     try:
+        allowed = _parse_allowed_camera_ids()
+        if allowed is not None and not allowed:
+            return jsonify({"latest_timestamp": None, "new_events_count": 0})
+
+        extra_where = ""
+        extra_params = []
+        if allowed:
+            placeholders = ','.join(['%s'] * len(allowed))
+            extra_where = f" WHERE camera_id IN ({placeholders})"
+            extra_params = list(allowed)
+
         cursor = conn.cursor()
-        cursor.execute("SELECT MAX(timestamp) FROM anpr_events")
+        cursor.execute(f"SELECT MAX(timestamp) FROM anpr_events{extra_where}", extra_params)
         latest_timestamp = cursor.fetchone()[0]
 
+        new_events_count = 0
         if since_timestamp_str and latest_timestamp:
             try:
                 since_timestamp_obj = datetime.fromisoformat(since_timestamp_str.replace('Z', '+00:00'))
-                cursor.execute(
-                    "SELECT COUNT(*) FROM anpr_events WHERE timestamp > %s", 
-                    (since_timestamp_obj,)
-                )
+                where_clause = "timestamp > %s"
+                params = [since_timestamp_obj]
+                if allowed:
+                    placeholders = ','.join(['%s'] * len(allowed))
+                    where_clause += f" AND camera_id IN ({placeholders})"
+                    params.extend(allowed)
+                cursor.execute(f"SELECT COUNT(*) FROM anpr_events WHERE {where_clause}", params)
                 new_events_count = cursor.fetchone()[0]
             except (ValueError, TypeError):
                 logger.warning(f"Invalid 'since' timestamp format received: {since_timestamp_str}")
@@ -527,6 +622,296 @@ def get_latest_timestamp():
     finally:
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
+
+# ------------------ Admin: camera_groups CRUD ------------------
+
+@app.route('/api/admin/camera-groups', methods=['GET'])
+def admin_list_camera_groups():
+    """List all groups with counts."""
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT cg.id, cg.name, cg.description, cg.created_at, cg.updated_at,
+                   (SELECT COUNT(*) FROM camera_group_members WHERE group_id = cg.id) AS camera_count,
+                   (SELECT COUNT(*) FROM user_camera_groups WHERE group_id = cg.id) AS user_count
+            FROM camera_groups cg
+            ORDER BY cg.name
+        """)
+        groups = cursor.fetchall()
+        for g in groups:
+            if g.get('created_at'): g['created_at'] = g['created_at'].isoformat()
+            if g.get('updated_at'): g['updated_at'] = g['updated_at'].isoformat()
+        return jsonify({"groups": groups})
+    except mysql.connector.Error as err:
+        logger.error(f"Error listing camera groups: {err}", exc_info=True)
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+
+@app.route('/api/admin/camera-groups', methods=['POST'])
+def admin_create_camera_group():
+    """Create a group. Body: {name, description?}."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    description = data.get('description')
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    if len(name) > 255:
+        return jsonify({"error": "name too long (max 255)"}), 400
+
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO camera_groups (name, description) VALUES (%s, %s)",
+            (name, description)
+        )
+        new_id = cursor.lastrowid
+        conn.commit()
+        return jsonify({"id": new_id, "name": name, "description": description}), 201
+    except mysql.connector.IntegrityError:
+        return jsonify({"error": f"A group named '{name}' already exists"}), 409
+    except mysql.connector.Error as err:
+        logger.error(f"Error creating camera group: {err}", exc_info=True)
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+
+@app.route('/api/admin/camera-groups/<int:group_id>', methods=['GET'])
+def admin_get_camera_group(group_id):
+    """Detail of a single group."""
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, name, description, created_at, updated_at FROM camera_groups WHERE id = %s",
+            (group_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        if row.get('created_at'): row['created_at'] = row['created_at'].isoformat()
+        if row.get('updated_at'): row['updated_at'] = row['updated_at'].isoformat()
+        return jsonify(row)
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+
+@app.route('/api/admin/camera-groups/<int:group_id>', methods=['PUT'])
+def admin_update_camera_group(group_id):
+    """Update name and/or description. Body: {name?, description?}."""
+    data = request.get_json(silent=True) or {}
+    fields = []
+    params = []
+    if 'name' in data:
+        name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({"error": "name cannot be empty"}), 400
+        if len(name) > 255:
+            return jsonify({"error": "name too long (max 255)"}), 400
+        fields.append("name = %s")
+        params.append(name)
+    if 'description' in data:
+        fields.append("description = %s")
+        params.append(data.get('description'))
+    if not fields:
+        return jsonify({"error": "no updatable fields supplied"}), 400
+
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        params.append(group_id)
+        cursor.execute(f"UPDATE camera_groups SET {', '.join(fields)} WHERE id = %s", params)
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Not found"}), 404
+        conn.commit()
+        return jsonify({"status": "ok"})
+    except mysql.connector.IntegrityError:
+        return jsonify({"error": "name conflict"}), 409
+    except mysql.connector.Error as err:
+        logger.error(f"Error updating camera group {group_id}: {err}", exc_info=True)
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+
+@app.route('/api/admin/camera-groups/<int:group_id>', methods=['DELETE'])
+def admin_delete_camera_group(group_id):
+    """Delete a group (CASCADE removes memberships)."""
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM camera_groups WHERE id = %s", (group_id,))
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Not found"}), 404
+        conn.commit()
+        return jsonify({"status": "ok"})
+    except mysql.connector.Error as err:
+        logger.error(f"Error deleting camera group {group_id}: {err}", exc_info=True)
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+
+# ------------------ Admin: camera <-> group membership ------------------
+
+@app.route('/api/admin/camera-groups/<int:group_id>/cameras', methods=['GET'])
+def admin_list_group_cameras(group_id):
+    """List cameras in a specific group."""
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT 1 FROM camera_groups WHERE id = %s", (group_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "group not found"}), 404
+        cursor.execute("""
+            SELECT c.id, c.friendly_name, c.ip_address, c.port
+            FROM cameras c
+            JOIN camera_group_members cgm ON cgm.camera_id = c.id
+            WHERE cgm.group_id = %s
+            ORDER BY c.friendly_name
+        """, (group_id,))
+        return jsonify({"cameras": cursor.fetchall()})
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+
+@app.route('/api/admin/camera-groups/<int:group_id>/cameras', methods=['PUT'])
+def admin_set_group_cameras(group_id):
+    """Replace membership of cameras in this group. Body: {camera_ids: [int, ...]}."""
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get('camera_ids')
+    if not isinstance(raw_ids, list):
+        return jsonify({"error": "camera_ids must be a list"}), 400
+    camera_ids = []
+    for c in raw_ids:
+        try:
+            camera_ids.append(int(c))
+        except (ValueError, TypeError):
+            return jsonify({"error": f"invalid camera id: {c}"}), 400
+
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM camera_groups WHERE id = %s", (group_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "group not found"}), 404
+
+        # Validate all camera_ids exist in cameras table
+        if camera_ids:
+            placeholders = ','.join(['%s'] * len(camera_ids))
+            cursor.execute(f"SELECT id FROM cameras WHERE id IN ({placeholders})", camera_ids)
+            found = {row[0] for row in cursor.fetchall()}
+            missing = [cid for cid in camera_ids if cid not in found]
+            if missing:
+                return jsonify({"error": f"camera ids not found: {missing}"}), 400
+
+        cursor.execute("DELETE FROM camera_group_members WHERE group_id = %s", (group_id,))
+        if camera_ids:
+            cursor.executemany(
+                "INSERT INTO camera_group_members (camera_id, group_id) VALUES (%s, %s)",
+                [(cid, group_id) for cid in camera_ids]
+            )
+        conn.commit()
+        return jsonify({"status": "ok", "count": len(camera_ids)})
+    except mysql.connector.Error as err:
+        conn.rollback()
+        logger.error(f"Error setting group {group_id} cameras: {err}", exc_info=True)
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+
+@app.route('/api/admin/users/<int:user_id>/camera-groups', methods=['GET'])
+def admin_list_user_camera_groups(user_id):
+    """List groups assigned to a user."""
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT cg.id, cg.name, cg.description
+            FROM camera_groups cg
+            JOIN user_camera_groups ucg ON ucg.group_id = cg.id
+            WHERE ucg.user_id = %s
+            ORDER BY cg.name
+        """, (user_id,))
+        return jsonify({"groups": cursor.fetchall()})
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+
+@app.route('/api/admin/users/<int:user_id>/camera-groups', methods=['PUT'])
+def admin_set_user_camera_groups(user_id):
+    """Replace group assignments for a user. Body: {group_ids: [int, ...]}."""
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get('group_ids')
+    if not isinstance(raw_ids, list):
+        return jsonify({"error": "group_ids must be a list"}), 400
+    group_ids = []
+    for g in raw_ids:
+        try:
+            group_ids.append(int(g))
+        except (ValueError, TypeError):
+            return jsonify({"error": f"invalid group id: {g}"}), 400
+
+    conn = get_db_connection()
+    if not conn: abort(503, description="Database connection unavailable")
+    cursor = None
+    try:
+        cursor = conn.cursor()
+
+        # Validate all group_ids exist
+        if group_ids:
+            placeholders = ','.join(['%s'] * len(group_ids))
+            cursor.execute(f"SELECT id FROM camera_groups WHERE id IN ({placeholders})", group_ids)
+            found = {row[0] for row in cursor.fetchall()}
+            missing = [gid for gid in group_ids if gid not in found]
+            if missing:
+                return jsonify({"error": f"group ids not found: {missing}"}), 400
+
+        cursor.execute("DELETE FROM user_camera_groups WHERE user_id = %s", (user_id,))
+        if group_ids:
+            cursor.executemany(
+                "INSERT INTO user_camera_groups (user_id, group_id) VALUES (%s, %s)",
+                [(user_id, gid) for gid in group_ids]
+            )
+        conn.commit()
+        return jsonify({"status": "ok", "count": len(group_ids)})
+    except mysql.connector.Error as err:
+        conn.rollback()
+        logger.error(f"Error setting user {user_id} groups: {err}", exc_info=True)
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
 
 @app.route('/health', methods=['GET'])
 def health_check():
