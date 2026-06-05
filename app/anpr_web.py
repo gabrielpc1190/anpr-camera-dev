@@ -147,26 +147,17 @@ def login():
             login_user(user)
             session.permanent = True
             
-            # Capture and save IP address to the session record
-            # Handle potential proxies like Cloudflare
+            # Capture IP into the session dict. flask-session writes the session
+            # row to the DB during save_session() at the end of the request, so
+            # storing the IP here lets it be persisted atomically with the rest of
+            # the session data. Previously a direct UPDATE to the ip_address
+            # column ran inside the view before flask-session saved the row,
+            # causing a race where many sessions ended up with NULL ip_address.
+            # Handle potential proxies like Cloudflare.
             ip_addr = request.headers.get('X-Forwarded-For', request.remote_addr)
             if ip_addr and ',' in ip_addr:
                 ip_addr = ip_addr.split(',')[0].strip()
-            
-            session_model = app.config.get('SESSION_SQLALCHEMY_TABLE', 'sessions')
-            try:
-                # Update the session record with the IP address
-                # flask-session stores the sid in the session object
-                prefix = app.config.get('SESSION_KEY_PREFIX', '')
-                full_sid = f"{prefix}{session.sid}"
-                db.session.execute(
-                    db.text(f"UPDATE {session_model} SET ip_address = :ip WHERE session_id = :sid"),
-                    {"ip": ip_addr, "sid": full_sid}
-                )
-                db.session.commit()
-            except Exception as e:
-                db.session.rollback()
-                print(f"Error saving IP to session: {e}")
+            session['ip_address'] = ip_addr
 
             next_page = request.args.get('next')
             if not next_page or urlparse(next_page).netloc != '':
@@ -227,12 +218,18 @@ def list_sessions():
                         prefix = app.config.get('SESSION_KEY_PREFIX', '')
                         full_sid = f"{prefix}{current_sid}" if current_sid else None
                         
+                        # Prefer the IP captured in session data (race-free since
+                        # flask-session writes it atomically). Fall back to the
+                        # ip_address column for historical sessions saved by the
+                        # old direct-UPDATE code path.
+                        ip_from_session = decoded.get('ip_address')
+                        ip_from_column = row.ip_address if hasattr(row, 'ip_address') else None
                         sessions_list.append({
                             'id': row.id,
                             'session_id': row.session_id[:16] + '...',
                             'username': session_data.get('username', 'Unknown'),
                             'role': session_data.get('role', '-'),
-                            'ip_address': row.ip_address if hasattr(row, 'ip_address') else None,
+                            'ip_address': ip_from_session or ip_from_column,
                             'expiry': row.expiry.isoformat() if row.expiry else None,
                             'is_current': row.session_id == full_sid
                         })
