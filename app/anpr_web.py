@@ -2,11 +2,20 @@ import os
 from datetime import timedelta
 from functools import wraps
 import requests
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, abort, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, abort, session, make_response
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_session import Session
 from app.models import db, User
 from urllib.parse import urlparse
+import json
+
+# --- i18n: load translations at startup (fail-fast if missing/malformed) ---
+TRANSLATIONS = {}
+for _lang in ('es', 'en'):
+    with open(f'/app/app/translations/{_lang}.json', encoding='utf-8') as _f:
+        TRANSLATIONS[_lang] = json.load(_f)
+SUPPORTED_LANGS = ('es', 'en')
+DEFAULT_LANG = 'es'
 
 app = Flask(__name__)
 
@@ -69,6 +78,29 @@ def get_allowed_camera_ids(user):
     )
     return sorted(int(row[0]) for row in result)
 
+def get_lang():
+    """Return the current language code from the cookie, validated against SUPPORTED_LANGS."""
+    lang = request.cookies.get('lang', DEFAULT_LANG)
+    return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
+
+
+def t(key):
+    """Translate a key using the current language. Returns the key itself if not found
+    (intentional: makes missing translations visible in UI for fast QA detection)."""
+    return TRANSLATIONS[get_lang()].get(key, key)
+
+
+@app.context_processor
+def inject_i18n():
+    """Make t(), current_lang and translations_json available in every template."""
+    lang = get_lang()
+    return {
+        't': t,
+        'current_lang': lang,
+        'translations_json': json.dumps(TRANSLATIONS[lang]),
+    }
+
+
 # --- Decorators ---
 def admin_required(f):
     """Decorator that ensures the current user is an admin."""
@@ -86,6 +118,20 @@ def admin_required(f):
 def health_check():
     """Public health check endpoint."""
     return jsonify({"status": "healthy"}), 200
+
+@app.route('/set-lang/<lang>')
+def set_lang(lang):
+    """Set the user's preferred language via cookie. Validates next_url against open redirect."""
+    if lang not in SUPPORTED_LANGS:
+        abort(400)
+    next_url = request.args.get('next', request.referrer or url_for('index'))
+    # Prevent open redirect: only allow relative paths on the same host
+    if urlparse(next_url).netloc != '':
+        next_url = url_for('index')
+    resp = make_response(redirect(next_url))
+    resp.set_cookie('lang', lang, max_age=365*24*3600, samesite='Lax')
+    return resp
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -127,7 +173,7 @@ def login():
                 next_page = url_for('index')
             return redirect(next_page)
         else:
-            flash('Invalid username or password')
+            flash(t('login.invalid'))
 
     return render_template('login.html')
 
@@ -195,7 +241,7 @@ def list_sessions():
 
         return jsonify({'sessions': sessions_list, 'count': len(sessions_list)})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': t('backend.error.internal').format(error=str(e))}), 500
 
 @app.route('/admin/sessions/<int:session_id>', methods=['DELETE'])
 @admin_required
@@ -208,10 +254,10 @@ def revoke_session(session_id):
             {"id": session_id}
         )
         db.session.commit()
-        return jsonify({'status': 'ok', 'message': 'Session revoked'})
+        return jsonify({'status': 'ok', 'message': t('backend.success.session_revoked')})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': t('backend.error.internal').format(error=str(e))}), 500
 
 @app.route('/admin/sessions/revoke-all', methods=['POST'])
 @admin_required
@@ -228,10 +274,10 @@ def revoke_all_sessions():
         else:
             result = db.session.execute(db.text(f"DELETE FROM {session_model}"))
         db.session.commit()
-        return jsonify({'status': 'ok', 'message': f'Sessions revoked ({result.rowcount} removed). Your session was preserved.'})
+        return jsonify({'status': 'ok', 'message': t('backend.success.sessions_revoked').format(count=result.rowcount)})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': t('backend.error.internal').format(error=str(e))}), 500
 
 # --- Admin User Management (viewer users only) ---
 
@@ -253,13 +299,13 @@ def is_password_strong(password):
     - At least one digit
     """
     if len(password) < 10:
-        return False, "Password must be at least 10 characters long."
+        return False, t('backend.password.too_short')
     if not any(c.isupper() for c in password):
-        return False, "Password must contain at least one uppercase letter."
+        return False, t('backend.password.no_uppercase')
     if not any(c.islower() for c in password):
-        return False, "Password must contain at least one lowercase letter."
+        return False, t('backend.password.no_lowercase')
     if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least one digit."
+        return False, t('backend.password.no_digit')
     return True, ""
 
 @app.route('/admin/users', methods=['POST'])
@@ -268,27 +314,27 @@ def create_viewer_user():
     """Create a new viewer user."""
     data = request.get_json()
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': t('backend.error.no_data')}), 400
 
     username = data.get('username', '').strip()
     password = data.get('password', '')
 
     if not username or not password:
-        return jsonify({'error': 'Username and password are required'}), 400
+        return jsonify({'error': t('backend.error.username_password_required')}), 400
 
     is_strong, msg = is_password_strong(password)
     if not is_strong:
         return jsonify({'error': msg}), 400
 
     if User.query.filter_by(username=username).first():
-        return jsonify({'error': f'User "{username}" already exists'}), 409
+        return jsonify({'error': t('backend.error.user_exists').format(name=username)}), 409
 
     user = User(username=username, role='viewer')
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
 
-    return jsonify({'status': 'ok', 'message': f'Viewer user "{username}" created', 'user': {'id': user.id, 'username': user.username, 'role': user.role}}), 201
+    return jsonify({'status': 'ok', 'message': t('backend.success.user_created').format(name=username), 'user': {'id': user.id, 'username': user.username, 'role': user.role}}), 201
 
 @app.route('/admin/users/<int:user_id>', methods=['PUT'])
 @admin_required
@@ -296,22 +342,22 @@ def update_viewer_user(user_id):
     """Update a viewer user's username."""
     user = User.query.get(user_id)
     if not user:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({'error': t('backend.error.user_not_found')}), 404
     if user.is_admin:
-        return jsonify({'error': 'Cannot modify admin users from the web interface. Use the CLI.'}), 403
+        return jsonify({'error': t('backend.error.cannot_modify_admin')}), 403
 
     data = request.get_json()
     new_username = data.get('username', '').strip() if data else ''
     if not new_username:
-        return jsonify({'error': 'New username is required'}), 400
+        return jsonify({'error': t('backend.error.username_required')}), 400
 
     existing = User.query.filter_by(username=new_username).first()
     if existing and existing.id != user_id:
-        return jsonify({'error': f'Username "{new_username}" is already taken'}), 409
+        return jsonify({'error': t('backend.error.username_taken').format(name=new_username)}), 409
 
     user.username = new_username
     db.session.commit()
-    return jsonify({'status': 'ok', 'message': f'Username updated to "{new_username}"'})
+    return jsonify({'status': 'ok', 'message': t('backend.success.username_updated').format(name=new_username)})
 
 @app.route('/admin/users/<int:user_id>/reset-password', methods=['POST'])
 @admin_required
@@ -319,20 +365,20 @@ def reset_viewer_password(user_id):
     """Reset a viewer user's password."""
     user = User.query.get(user_id)
     if not user:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({'error': t('backend.error.user_not_found')}), 404
     if user.is_admin:
-        return jsonify({'error': 'Cannot reset admin passwords from the web interface. Use the CLI.'}), 403
+        return jsonify({'error': t('backend.error.cannot_reset_admin_password')}), 403
 
     data = request.get_json()
     new_password = data.get('password', '') if data else ''
-    
+
     is_strong, msg = is_password_strong(new_password)
     if not is_strong:
         return jsonify({'error': msg}), 400
 
     user.set_password(new_password)
     db.session.commit()
-    return jsonify({'status': 'ok', 'message': f'Password reset for "{user.username}"'})
+    return jsonify({'status': 'ok', 'message': t('backend.success.password_reset').format(name=user.username)})
 
 @app.route('/admin/users/<int:user_id>', methods=['DELETE'])
 @admin_required
@@ -340,14 +386,14 @@ def delete_viewer_user(user_id):
     """Delete a viewer user."""
     user = User.query.get(user_id)
     if not user:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({'error': t('backend.error.user_not_found')}), 404
     if user.is_admin:
-        return jsonify({'error': 'Cannot delete admin users from the web interface. Use the CLI.'}), 403
+        return jsonify({'error': t('backend.error.cannot_delete_admin')}), 403
 
     username = user.username
     db.session.delete(user)
     db.session.commit()
-    return jsonify({'status': 'ok', 'message': f'User "{username}" deleted'})
+    return jsonify({'status': 'ok', 'message': t('backend.success.user_deleted').format(name=username)})
 
 
 # ------------------ Admin: camera groups CRUD ------------------
@@ -423,10 +469,10 @@ def _proxy_to_db_manager(method, path_suffix, json_body=None):
         elif method == 'DELETE':
             r = requests.delete(url, timeout=10)
         else:
-            return jsonify({"error": f"unsupported method {method}"}), 405
+            return jsonify({"error": t('backend.error.unsupported_method').format(method=method)}), 405
         return r.content, r.status_code, {'Content-Type': r.headers.get('Content-Type', 'application/json')}
     except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"db-manager unreachable: {e}"}), 503
+        return jsonify({"error": t('backend.error.db_manager_unreachable').format(error=str(e))}), 503
 
 
 # --- API Proxy Routes ---
@@ -439,7 +485,7 @@ def api_proxy(path):
     """
     # Role-based restriction: viewers can only read
     if not current_user.is_admin and request.method != 'GET':
-        return jsonify({"error": "Permission denied. Viewer accounts are read-only."}), 403
+        return jsonify({"error": t('backend.error.permission_denied_readonly')}), 403
 
     url = f"{DB_MANAGER_API_URL}/api/{path}"
 
@@ -471,7 +517,7 @@ def api_proxy(path):
         return response.content, response.status_code, {'Content-Type': response.headers.get('Content-Type', 'application/json')}
 
     except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Failed to connect to DB Manager: {str(e)}"}), 503
+        return jsonify({"error": t('backend.error.db_connect').format(error=str(e))}), 503
 
 @app.route('/images/<path:filename>')
 @login_required

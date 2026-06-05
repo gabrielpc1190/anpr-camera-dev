@@ -10,6 +10,7 @@
         tailwind.config = { darkMode: 'class' }
     </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='inter.css') }}">
+    <script>window.__i18n = {{ translations_json | safe }};</script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -51,16 +52,22 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">Admin Panel</h1>
+                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">{{ t('admin.title') }}</h1>
             </div>
             <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-1 mr-3">
+                    <a href="/set-lang/es?next={{ request.path }}"
+                       class="px-2 py-1 text-xs rounded {% if current_lang == 'es' %}bg-white text-blue-600 font-semibold{% else %}text-white hover:bg-blue-700{% endif %}">ES</a>
+                    <a href="/set-lang/en?next={{ request.path }}"
+                       class="px-2 py-1 text-xs rounded {% if current_lang == 'en' %}bg-white text-blue-600 font-semibold{% else %}text-white hover:bg-blue-700{% endif %}">EN</a>
+                </div>
                 <a href="{{ url_for('index') }}"
                     class="bg-blue-500 hover:bg-blue-400 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">
-                    ← Dashboard
+                    ← {{ t('header.dashboard') }}
                 </a>
                 <a href="{{ url_for('logout') }}"
                     class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">
-                    Logout
+                    {{ t('header.logout') }}
                 </a>
             </div>
         </header>
@@ -69,31 +76,31 @@
         <div class="flex space-x-6 mb-6 border-b border-gray-300 dark:border-gray-700">
             <button id="tabSessions" onclick="switchTab('sessions')"
                 class="pb-3 px-2 text-sm sm:text-base cursor-pointer tab-active transition-colors">
-                🔐 Active Sessions
+                {{ t('admin.tabs.sessions') }}
             </button>
             <button id="tabUsers" onclick="switchTab('users')"
                 class="pb-3 px-2 text-sm sm:text-base cursor-pointer tab-inactive transition-colors">
-                👥 Viewer Users
+                {{ t('admin.tabs.users') }}
             </button>
             <button id="tabGroups" onclick="switchTab('groups')"
                 class="pb-3 px-2 text-sm sm:text-base cursor-pointer tab-inactive transition-colors">
-                📂 Grupos
+                {{ t('admin.tabs.groups') }}
             </button>
         </div>
 
         <!-- Sessions Tab -->
         <div id="panelSessions">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold">Active Sessions <span id="sessionCount"
+                <h2 class="text-lg font-semibold">{{ t('admin.sessions.title') }} <span id="sessionCount"
                         class="text-sm text-gray-500 dark:text-gray-400"></span></h2>
                 <div class="flex space-x-2">
                     <button onclick="loadSessions()"
                         class="bg-blue-500 hover:bg-blue-600 text-white text-sm py-2 px-4 rounded-lg transition-colors">
-                        🔄 Refresh
+                        {{ t('admin.sessions.refresh') }}
                     </button>
                     <button onclick="revokeAllSessions()"
                         class="bg-red-600 hover:bg-red-700 text-white text-sm py-2 px-4 rounded-lg transition-colors">
-                        ⚠ Revoke All
+                        {{ t('admin.sessions.revoke_all') }}
                     </button>
                 </div>
             </div>
@@ -101,17 +108,17 @@
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
                         <tr>
-                            <th class="p-3 text-left">User</th>
-                            <th class="p-3 text-left">Role</th>
-                            <th class="p-3 text-left">IP Address</th>
-                            <th class="p-3 text-left">Session ID</th>
-                            <th class="p-3 text-left">Expires</th>
-                            <th class="p-3 text-center">Actions</th>
+                            <th class="p-3 text-left">{{ t('admin.sessions.col_user') }}</th>
+                            <th class="p-3 text-left">{{ t('admin.sessions.col_role') }}</th>
+                            <th class="p-3 text-left">{{ t('admin.sessions.col_ip') }}</th>
+                            <th class="p-3 text-left">{{ t('admin.sessions.col_session_id') }}</th>
+                            <th class="p-3 text-left">{{ t('admin.sessions.col_expires') }}</th>
+                            <th class="p-3 text-center">{{ t('admin.sessions.col_actions') }}</th>
                         </tr>
                     </thead>
                     <tbody id="sessionsBody" class="divide-y divide-gray-200 dark:divide-gray-600">
                         <tr>
-                            <td colspan="5" class="p-4 text-center text-gray-500">Loading...</td>
+                            <td colspan="5" class="p-4 text-center text-gray-500">{{ t('admin.sessions.loading') }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -121,27 +128,26 @@
         <!-- Users Tab -->
         <div id="panelUsers" class="hidden">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold">Viewer Users <span id="userCount"
+                <h2 class="text-lg font-semibold">{{ t('admin.users.title') }} <span id="userCount"
                         class="text-sm text-gray-500 dark:text-gray-400"></span></h2>
                 <button onclick="showCreateUserModal()"
                     class="bg-green-600 hover:bg-green-700 text-white text-sm py-2 px-4 rounded-lg transition-colors">
-                    + Create Viewer
+                    {{ t('admin.users.create_btn') }}
                 </button>
             </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">ℹ Admin users are managed via CLI only
-                (<code>./setup.sh create-user</code>)</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">{{ t('admin.users.admin_cli_note') | safe }}</p>
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
                         <tr>
-                            <th class="p-3 text-left">ID</th>
-                            <th class="p-3 text-left">Username</th>
-                            <th class="p-3 text-center">Actions</th>
+                            <th class="p-3 text-left">{{ t('admin.users.col_id') }}</th>
+                            <th class="p-3 text-left">{{ t('admin.users.col_username') }}</th>
+                            <th class="p-3 text-center">{{ t('admin.users.col_actions') }}</th>
                         </tr>
                     </thead>
                     <tbody id="usersBody" class="divide-y divide-gray-200 dark:divide-gray-600">
                         <tr>
-                            <td colspan="3" class="p-4 text-center text-gray-500">Loading...</td>
+                            <td colspan="3" class="p-4 text-center text-gray-500">{{ t('admin.users.loading') }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -152,25 +158,25 @@
         <div id="panelGroups" class="hidden">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Grupos de cámaras</h2>
+                    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.groups.title') }}</h2>
                     <button onclick="showCreateGroupModal()"
                         class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                        + Crear grupo
+                        {{ t('admin.groups.create_btn') }}
                     </button>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead class="bg-gray-50 dark:bg-gray-700">
                             <tr>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Nombre</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Descripción</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Cámaras</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Viewers</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Acciones</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">{{ t('admin.groups.name_th') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">{{ t('admin.groups.description_th') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">{{ t('admin.groups.cameras_th') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">{{ t('admin.groups.viewers_th') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">{{ t('admin.common.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody id="groupsTableBody" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            <tr><td colspan="5" class="text-center p-6 text-gray-500">Cargando...</td></tr>
+                            <tr><td colspan="5" class="text-center p-6 text-gray-500">{{ t('admin.common.loading') }}</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -180,30 +186,30 @@
         <!-- ============ Modal: Crear/Editar Grupo ============ -->
         <div id="groupModal" class="hidden fixed inset-0 modal-overlay flex items-center justify-center z-50">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4">
-                <h3 id="groupModalTitle" class="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">Crear grupo</h3>
+                <h3 id="groupModalTitle" class="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">{{ t('admin.groups.create') }}</h3>
                 <input type="hidden" id="groupModalId" value="">
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre</label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('admin.groups.name_th') }}</label>
                     <input type="text" id="groupModalName"
                         class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                         placeholder="Ej. Residencial X" maxlength="255">
                 </div>
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descripción (opcional)</label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('admin.groups.description_label') }}</label>
                     <textarea id="groupModalDescription" rows="2"
                         class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                         placeholder="Descripción libre"></textarea>
                 </div>
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cámaras en este grupo</label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('admin.groups.cameras_in_group') }}</label>
                     <div id="groupModalCameras" class="border border-gray-300 dark:border-gray-600 rounded-md p-3 max-h-48 overflow-y-auto bg-white dark:bg-gray-700">
-                        <p class="text-gray-500 text-sm">Cargando cámaras...</p>
+                        <p class="text-gray-500 text-sm">{{ t('admin.groups.loading_cameras') }}</p>
                     </div>
                 </div>
                 <div id="groupModalError" class="hidden text-red-600 text-sm mb-3"></div>
                 <div class="flex justify-end space-x-2">
-                    <button onclick="hideGroupModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200">Cancelar</button>
-                    <button onclick="saveGroup()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md">Guardar</button>
+                    <button onclick="hideGroupModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200">{{ t('admin.common.cancel') }}</button>
+                    <button onclick="saveGroup()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md">{{ t('admin.common.save') }}</button>
                 </div>
             </div>
         </div>
@@ -211,38 +217,37 @@
         <!-- Create User Modal -->
         <div id="createUserModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
-                <h3 class="text-lg font-bold mb-4">Create Viewer User</h3>
+                <h3 class="text-lg font-bold mb-4">{{ t('admin.users.create') }}</h3>
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium mb-1">Username</label>
-                        <input id="newUsername" type="text" placeholder="Enter username"
+                        <label class="block text-sm font-medium mb-1">{{ t('admin.users.username_label') }}</label>
+                        <input id="newUsername" type="text" placeholder="{{ t('admin.users.username_placeholder') }}"
                             class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium mb-1">Password</label>
-                        <input id="newPassword" type="password" placeholder="Complexity: 10+ chars, A-Z, a-z, 0-9"
+                        <label class="block text-sm font-medium mb-1">{{ t('admin.users.password_label') }}</label>
+                        <input id="newPassword" type="password" placeholder="{{ t('admin.users.password_placeholder') }}"
                             class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
-                        <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Mínimo 10 caracteres, incluyendo
-                            Mayúscula, Minúscula y Número.</p>
+                        <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">{{ t('admin.users.password_min_chars') }}</p>
                     </div>
                     <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grupos asignados</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('admin.users.assigned_groups') }}</label>
                         <div id="createUserModalGroups" class="border border-gray-300 dark:border-gray-600 rounded-md p-3 max-h-48 overflow-y-auto bg-white dark:bg-gray-700">
-                            <p class="text-gray-500 text-sm">Cargando grupos...</p>
+                            <p class="text-gray-500 text-sm">{{ t('admin.users.loading_groups') }}</p>
                         </div>
                         <p id="createUserModalNoGroupsWarning" class="hidden mt-2 text-sm text-yellow-700 dark:text-yellow-400">
-                            ⚠️ Sin grupos asignados, este viewer no verá ninguna cámara.
+                            {{ t('admin.groups.warning_no_groups') }}
                         </p>
                     </div>
                     <div id="createUserError" class="text-red-500 text-sm hidden"></div>
                     <div class="flex justify-end space-x-3">
                         <button onclick="hideCreateUserModal()"
                             class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                            Cancel
+                            {{ t('admin.common.cancel') }}
                         </button>
                         <button onclick="createUser()"
                             class="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
-                            Create
+                            {{ t('admin.users.create_btn_modal') }}
                         </button>
                     </div>
                 </div>
@@ -252,26 +257,25 @@
         <!-- Reset Password Modal -->
         <div id="resetPasswordModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
-                <h3 class="text-lg font-bold mb-4">Reset Password for <span id="resetUserName"
+                <h3 class="text-lg font-bold mb-4">{{ t('admin.users.reset_password_for') }} <span id="resetUserName"
                         class="text-blue-500"></span></h3>
                 <input type="hidden" id="resetUserId">
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium mb-1">New Password</label>
-                        <input id="resetNewPassword" type="password" placeholder="Complexity: 10+ chars, A-Z, a-z, 0-9"
+                        <label class="block text-sm font-medium mb-1">{{ t('admin.users.password_label') }}</label>
+                        <input id="resetNewPassword" type="password" placeholder="{{ t('admin.users.password_placeholder') }}"
                             class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
-                        <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Mínimo 10 caracteres, incluyendo
-                            Mayúscula, Minúscula y Número.</p>
+                        <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">{{ t('admin.users.password_min_chars') }}</p>
                     </div>
                     <div id="resetPasswordError" class="text-red-500 text-sm hidden"></div>
                     <div class="flex justify-end space-x-3">
                         <button onclick="hideResetPasswordModal()"
                             class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                            Cancel
+                            {{ t('admin.common.cancel') }}
                         </button>
                         <button onclick="resetPassword()"
                             class="px-4 py-2 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors">
-                            Reset
+                            {{ t('admin.users.reset_password_submit') }}
                         </button>
                     </div>
                 </div>
@@ -281,27 +285,27 @@
         <!-- Edit User Groups Modal -->
         <div id="editUserGroupsModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
-                <h3 class="text-lg font-bold mb-4">Grupos de <span id="editGroupsUserName" class="text-blue-500"></span></h3>
+                <h3 class="text-lg font-bold mb-4" id="editUserGroupsTitle">{{ t('admin.users.edit_groups_title').replace('{name}', '') }}</h3>
                 <input type="hidden" id="editGroupsUserId">
                 <div class="space-y-4">
                     <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grupos asignados</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('admin.users.assigned_groups') }}</label>
                         <div id="userModalGroups" class="border border-gray-300 dark:border-gray-600 rounded-md p-3 max-h-48 overflow-y-auto bg-white dark:bg-gray-700">
-                            <p class="text-gray-500 text-sm">Cargando grupos...</p>
+                            <p class="text-gray-500 text-sm">{{ t('admin.users.loading_groups') }}</p>
                         </div>
                         <p id="userModalNoGroupsWarning" class="hidden mt-2 text-sm text-yellow-700 dark:text-yellow-400">
-                            ⚠️ Sin grupos asignados, este viewer no verá ninguna cámara.
+                            {{ t('admin.groups.warning_no_groups') }}
                         </p>
                     </div>
                     <div id="editUserGroupsError" class="text-red-500 text-sm hidden"></div>
                     <div class="flex justify-end space-x-3">
                         <button onclick="hideEditUserGroupsModal()"
                             class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                            Cancelar
+                            {{ t('admin.common.cancel') }}
                         </button>
                         <button onclick="saveEditUserGroups()"
                             class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-                            Guardar grupos
+                            {{ t('admin.users.edit_groups_save') }}
                         </button>
                     </div>
                 </div>
@@ -310,6 +314,8 @@
     </div>
 
     <script>
+        function t(key) { return window.__i18n[key] || key; }
+
         // --- Tab Switching ---
         function switchTab(tab) {
             document.getElementById('panelSessions').classList.toggle('hidden', tab !== 'sessions');
@@ -333,7 +339,7 @@
                 document.getElementById('sessionCount').textContent = `(${data.count})`;
 
                 if (data.sessions.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No active sessions</td></tr>';
+                    tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">${t('admin.sessions.no_active')}</td></tr>`;
                     return;
                 }
 
@@ -341,7 +347,7 @@
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 ${s.is_current ? 'bg-blue-50/70 dark:bg-blue-900/20' : ''}">
                         <td class="p-3 font-medium">
                             ${escHtml(s.username)}
-                            ${s.is_current ? '<span class="ml-2 text-[10px] bg-green-500 text-white px-1.5 py-0.5 rounded uppercase font-bold">Tú</span>' : ''}
+                            ${s.is_current ? `<span class="ml-2 text-[10px] bg-green-500 text-white px-1.5 py-0.5 rounded uppercase font-bold">${t('admin.sessions.you_badge')}</span>` : ''}
                         </td>
                         <td class="p-3"><span class="px-2 py-1 rounded-full text-xs ${s.role === 'admin' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}">${s.role}</span></td>
                         <td class="p-3 text-gray-500 dark:text-gray-400 font-mono text-xs">
@@ -349,13 +355,13 @@
                         </td>
                         <td class="p-3 text-gray-500 dark:text-gray-400 font-mono text-xs">
                             ${s.session_id}
-                            ${s.is_current ? '<span class="ml-1 text-blue-600 dark:text-blue-400 font-sans italic">(esta sesión)</span>' : ''}
+                            ${s.is_current ? `<span class="ml-1 text-blue-600 dark:text-blue-400 font-sans italic">${t('admin.sessions.current_session_label')}</span>` : ''}
                         </td>
                         <td class="p-3 text-gray-500 dark:text-gray-400">${s.expiry ? new Date(s.expiry).toLocaleString() : '-'}</td>
                         <td class="p-3 text-center">
                             ${s.is_current ?
-                        '<span class="inline-block bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] font-bold px-2 py-1 rounded border border-blue-200 dark:border-blue-800">SESIÓN PROTEGIDA</span>' :
-                        `<button onclick="revokeSession(${s.id})" class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">Revoke</button>`
+                        `<span class="inline-block bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] font-bold px-2 py-1 rounded border border-blue-200 dark:border-blue-800">${t('admin.sessions.protected_badge')}</span>` :
+                        `<button onclick="revokeSession(${s.id})" class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">${t('admin.sessions.revoke_btn')}</button>`
                     }
                         </td>
                     </tr>
@@ -366,21 +372,21 @@
         }
 
         async function revokeSession(id) {
-            if (!confirm('Revoke this session? The user will be logged out.')) return;
+            if (!confirm(t('admin.sessions.revoke_confirm'))) return;
             try {
                 await fetch(`/admin/sessions/${id}`, { method: 'DELETE' });
                 loadSessions();
-            } catch (e) { alert('Failed to revoke session: ' + e.message); }
+            } catch (e) { alert(t('admin.sessions.revoke_error').replace('{error}', e.message)); }
         }
 
         async function revokeAllSessions() {
-            if (!confirm('⚠ Revoke ALL other sessions? Every other user will be logged out. Your current session will be preserved.')) return;
+            if (!confirm(t('admin.sessions.revoke_all_confirm'))) return;
             try {
                 const res = await fetch('/admin/sessions/revoke-all', { method: 'POST' });
                 const data = await res.json();
-                alert(data.message || 'Sessions revoked');
+                alert(data.message || t('admin.sessions.revoke_all'));
                 loadSessions();
-            } catch (e) { alert('Failed: ' + e.message); }
+            } catch (e) { alert(t('admin.sessions.revoke_failed').replace('{error}', e.message)); }
         }
 
         // --- Users ---
@@ -392,7 +398,7 @@
                 document.getElementById('userCount').textContent = `(${data.count})`;
 
                 if (data.users.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500">No viewer users yet</td></tr>';
+                    tbody.innerHTML = `<tr><td colspan="3" class="p-4 text-center text-gray-500">${t('admin.users.no_users_yet')}</td></tr>`;
                     return;
                 }
 
@@ -403,15 +409,15 @@
                         <td class="p-3 text-center space-x-2">
                             <button onclick="showEditUserGroupsModal(${u.id}, '${escHtml(u.username)}')"
                                 class="text-blue-500 hover:text-blue-700 text-xs font-medium px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">
-                                📂 Grupos
+                                ${t('admin.users.edit_groups_btn')}
                             </button>
                             <button onclick="showResetPasswordModal(${u.id}, '${escHtml(u.username)}')"
                                 class="text-orange-500 hover:text-orange-700 text-xs font-medium px-2 py-1 rounded hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors">
-                                🔑 Reset Password
+                                ${t('admin.users.reset_password_btn')}
                             </button>
                             <button onclick="deleteUser(${u.id}, '${escHtml(u.username)}')"
                                 class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
-                                🗑 Delete
+                                ${t('admin.users.delete_btn')}
                             </button>
                         </td>
                     </tr>
@@ -422,13 +428,13 @@
         }
 
         async function deleteUser(id, username) {
-            if (!confirm(`Delete viewer user "${username}"? This cannot be undone.`)) return;
+            if (!confirm(t('admin.users.delete_confirm').replace('{name}', username))) return;
             try {
                 const res = await fetch(`/admin/users/${id}`, { method: 'DELETE' });
                 const data = await res.json();
-                if (!res.ok) { alert(data.error || 'Failed'); return; }
+                if (!res.ok) { alert(data.error || t('admin.common.save')); return; }
                 loadUsers();
-            } catch (e) { alert('Failed: ' + e.message); }
+            } catch (e) { alert(t('admin.sessions.revoke_failed').replace('{error}', e.message)); }
         }
 
         // --- Create User Modal ---
@@ -445,10 +451,10 @@
         }
 
         function validatePassword(pass) {
-            if (pass.length < 10) return "Password must be at least 10 characters long.";
-            if (!/[A-Z]/.test(pass)) return "Password must contain at least one uppercase letter.";
-            if (!/[a-z]/.test(pass)) return "Password must contain at least one lowercase letter.";
-            if (!/[0-9]/.test(pass)) return "Password must contain at least one digit.";
+            if (pass.length < 10) return t('admin.users.password_too_short');
+            if (!/[A-Z]/.test(pass)) return t('admin.users.password_need_upper');
+            if (!/[a-z]/.test(pass)) return t('admin.users.password_need_lower');
+            if (!/[0-9]/.test(pass)) return t('admin.users.password_need_digit');
             return null;
         }
 
@@ -457,7 +463,7 @@
             const password = document.getElementById('newPassword').value;
             const errEl = document.getElementById('createUserError');
 
-            if (!username || !password) { errEl.textContent = 'Both fields are required.'; errEl.classList.remove('hidden'); return; }
+            if (!username || !password) { errEl.textContent = t('admin.users.fields_required'); errEl.classList.remove('hidden'); return; }
 
             const passErr = validatePassword(password);
             if (passErr) { errEl.textContent = passErr; errEl.classList.remove('hidden'); return; }
@@ -469,17 +475,17 @@
                     body: JSON.stringify({ username, password })
                 });
                 const data = await res.json();
-                if (!res.ok) { errEl.textContent = data.error || 'Failed'; errEl.classList.remove('hidden'); return; }
+                if (!res.ok) { errEl.textContent = data.error || t('admin.common.save'); errEl.classList.remove('hidden'); return; }
                 const newUserId = data.user ? data.user.id : data.id;
                 hideCreateUserModal();
                 // After user created, save group assignments
                 try {
                     await saveUserGroupAssignments(newUserId, 'create-user-group-cb');
                 } catch (e) {
-                    alert(`Usuario creado, pero error asignando grupos: ${String(e.message || e)}`);
+                    alert(t('admin.users.create_error_groups').replace('{error}', String(e.message || e)));
                 }
                 loadUsers();
-            } catch (e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
+            } catch (e) { errEl.textContent = t('admin.users.network_error').replace('{error}', e.message); errEl.classList.remove('hidden'); }
         }
 
         // --- Reset Password Modal ---
@@ -510,10 +516,10 @@
                     body: JSON.stringify({ password })
                 });
                 const data = await res.json();
-                if (!res.ok) { errEl.textContent = data.error || 'Failed'; errEl.classList.remove('hidden'); return; }
+                if (!res.ok) { errEl.textContent = data.error || t('admin.common.save'); errEl.classList.remove('hidden'); return; }
                 hideResetPasswordModal();
-                alert('Password reset successfully.');
-            } catch (e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
+                alert(t('admin.users.reset_password_done'));
+            } catch (e) { errEl.textContent = t('admin.users.network_error').replace('{error}', e.message); errEl.classList.remove('hidden'); }
         }
 
         // --- User Group Assignment ---
@@ -532,7 +538,7 @@
             const container = document.getElementById(containerId);
             const warningEl = document.getElementById(warningId);
             if (allGroups.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-sm">No hay grupos creados aún. Crea grupos en la pestaña "Grupos" antes de asignar.</p>';
+                container.innerHTML = `<p class="text-gray-500 text-sm">${t('admin.groups.no_groups_assign')}</p>`;
                 warningEl.classList.add('hidden');
                 return;
             }
@@ -579,9 +585,9 @@
         async function showEditUserGroupsModal(userId, username) {
             document.getElementById('editUserGroupsModal').classList.remove('hidden');
             document.getElementById('editGroupsUserId').value = userId;
-            document.getElementById('editGroupsUserName').textContent = username;
+            document.getElementById('editUserGroupsTitle').textContent = t('admin.users.edit_groups_title').replace('{name}', username);
             document.getElementById('editUserGroupsError').classList.add('hidden');
-            document.getElementById('userModalGroups').innerHTML = '<p class="text-gray-500 text-sm">Cargando grupos...</p>';
+            document.getElementById('userModalGroups').innerHTML = `<p class="text-gray-500 text-sm">${t('admin.users.loading_groups')}</p>`;
             const checked = await fetchUserGroupAssignments(userId);
             await renderUserGroupCheckboxes(checked, 'userModalGroups', 'userModalNoGroupsWarning', 'edit-user-group-cb');
         }
@@ -599,7 +605,7 @@
                 hideEditUserGroupsModal();
                 loadUsers();
             } catch (e) {
-                errEl.textContent = `Error guardando grupos: ${String(e.message || e)}`;
+                errEl.textContent = t('admin.groups.save_groups_error').replace('{error}', String(e.message || e));
                 errEl.classList.remove('hidden');
             }
         }
@@ -631,7 +637,7 @@
                 const tbody = document.getElementById('groupsTableBody');
                 tbody.innerHTML = '';
                 if (!data.groups || data.groups.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" class="text-center p-6 text-gray-500">No hay grupos creados aún.</td></tr>';
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center p-6 text-gray-500">${t('admin.groups.no_groups_yet')}</td></tr>`;
                     return;
                 }
                 for (const g of data.groups) {
@@ -643,8 +649,8 @@
                         <td class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">${g.camera_count}</td>
                         <td class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">${g.user_count}</td>
                         <td class="px-4 py-2 text-sm">
-                            <button class="text-blue-600 hover:underline mr-3" onclick="showEditGroupModal(${g.id})">Editar</button>
-                            <button class="text-red-600 hover:underline" onclick="deleteGroup(${g.id}, '${escHtml(g.name).replace(/'/g, "\\'")}')">Borrar</button>
+                            <button class="text-blue-600 hover:underline mr-3" onclick="showEditGroupModal(${g.id})">${t('admin.groups.edit_btn')}</button>
+                            <button class="text-red-600 hover:underline" onclick="deleteGroup(${g.id}, '${escHtml(g.name).replace(/'/g, "\\'")}')">${t('admin.groups.delete_btn')}</button>
                         </td>`;
                     tbody.appendChild(tr);
                 }
@@ -666,7 +672,7 @@
             const cameras = await ensureCameraList();
             const container = document.getElementById('groupModalCameras');
             if (cameras.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-sm">No hay cámaras configuradas.</p>';
+                container.innerHTML = `<p class="text-gray-500 text-sm">${t('admin.groups.no_cameras')}</p>`;
                 return;
             }
             container.innerHTML = cameras.map(c => `
@@ -678,7 +684,7 @@
         }
 
         async function showCreateGroupModal() {
-            document.getElementById('groupModalTitle').textContent = 'Crear grupo';
+            document.getElementById('groupModalTitle').textContent = t('admin.groups.create');
             document.getElementById('groupModalId').value = '';
             document.getElementById('groupModalName').value = '';
             document.getElementById('groupModalDescription').value = '';
@@ -689,7 +695,7 @@
         }
 
         async function showEditGroupModal(groupId) {
-            document.getElementById('groupModalTitle').textContent = 'Editar grupo';
+            document.getElementById('groupModalTitle').textContent = t('admin.groups.edit');
             document.getElementById('groupModalId').value = String(groupId);
             document.getElementById('groupModalError').classList.add('hidden');
             const [gRes, mRes] = await Promise.all([
@@ -715,7 +721,7 @@
             const description = document.getElementById('groupModalDescription').value.trim() || null;
             const errEl = document.getElementById('groupModalError');
             if (!name) {
-                errEl.textContent = 'El nombre es requerido.';
+                errEl.textContent = t('admin.groups.name_required');
                 errEl.classList.remove('hidden');
                 return;
             }
@@ -749,7 +755,7 @@
                     groupId = j.id;
                 }
             } catch (e) {
-                errEl.textContent = `Error guardando grupo: ${String(e.message || e)}`;
+                errEl.textContent = t('admin.groups.save_error').replace('{error}', String(e.message || e));
                 errEl.classList.remove('hidden');
                 return;
             }
@@ -767,7 +773,7 @@
                     throw new Error(e.error || `HTTP ${res.status}`);
                 }
             } catch (e) {
-                errEl.textContent = `Grupo guardado, pero error asignando cámaras: ${String(e.message || e)}`;
+                errEl.textContent = t('admin.groups.save_cameras_error').replace('{error}', String(e.message || e));
                 errEl.classList.remove('hidden');
                 return;
             }
@@ -777,7 +783,7 @@
         }
 
         async function deleteGroup(groupId, name) {
-            if (!confirm(`¿Borrar grupo "${name}"? Los viewers que tengan SOLO este grupo asignado quedarán sin acceso.`)) return;
+            if (!confirm(t('admin.groups.delete_confirm').replace('{name}', name))) return;
             try {
                 const res = await fetch(`/admin/camera-groups/${groupId}`, {method: 'DELETE'});
                 if (!res.ok) {
@@ -786,7 +792,7 @@
                 }
                 loadGroups();
             } catch (e) {
-                alert(`Error borrando grupo: ${String(e.message || e)}`);
+                alert(t('admin.groups.delete_error').replace('{error}', String(e.message || e)));
             }
         }
     </script>

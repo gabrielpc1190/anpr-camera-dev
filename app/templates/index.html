@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class="light">
+<html lang="{{ current_lang }}">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ANPR Event Viewer</title>
+    <title>{{ t('header.title') }}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <script src="{{ url_for('static', filename='tailwind.js') }}"></script>
     <script>
@@ -82,6 +82,7 @@
             document.documentElement.classList.add('light');
         }
     </script>
+    <script>window.__i18n = {{ translations_json | safe }};</script>
 </head>
 
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
@@ -96,11 +97,17 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">ANPR Viewer</h1>
+                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">{{ t('header.title') }}</h1>
             </div>
             <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-1 mr-3">
+                    <a href="/set-lang/es?next={{ request.path }}"
+                       class="px-2 py-1 text-xs rounded {% if current_lang == 'es' %}bg-white text-blue-600 font-semibold{% else %}text-white hover:bg-blue-700{% endif %}">ES</a>
+                    <a href="/set-lang/en?next={{ request.path }}"
+                       class="px-2 py-1 text-xs rounded {% if current_lang == 'en' %}bg-white text-blue-600 font-semibold{% else %}text-white hover:bg-blue-700{% endif %}">EN</a>
+                </div>
                 {% if current_user.is_admin %}
-                <a href="{{ url_for('admin_panel') }}" title="Admin Panel"
+                <a href="{{ url_for('admin_panel') }}" title="{{ t('header.admin_panel') }}"
                     class="p-2 rounded-full hover:bg-blue-500 dark:hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-white">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
                         stroke="currentColor">
@@ -113,7 +120,7 @@
                 {% endif %}
                 <button id="themeToggle"
                     class="p-2 rounded-full hover:bg-blue-500 dark:hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-blue-600"
-                    aria-label="Toggle Dark Mode">
+                    aria-label="{{ t('header.toggle_dark_mode') }}">
                     <!-- Sun Icon -->
                     <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 hidden dark:block" fill="none"
                         viewBox="0 0 24 24" stroke="currentColor">
@@ -128,7 +135,7 @@
                     </svg>
                 </button>
                 <a href="{{ url_for('logout') }}"
-                    class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">Logout</a>
+                    class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">{{ t('header.logout') }}</a>
             </div>
         </header>
 
@@ -136,77 +143,73 @@
             <form id="filterForm" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 <div class="space-y-1">
                     <label for="plate_number"
-                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Plate</label>
-                    <input type="text" id="plate_number" name="plate_number" placeholder="Search Plate..."
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ t('filter.plate') }}</label>
+                    <input type="text" id="plate_number" name="plate_number" placeholder="{{ t('filter.plate.placeholder') }}"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
                 </div>
                 <div class="space-y-1">
                     <label for="camera_id"
-                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Camera</label>
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ t('filter.camera') }}</label>
                     <select id="camera_id" name="camera_id"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
-                        <option value="">All Cameras</option>
+                        <option value="">{{ t('filter.all_cameras') }}</option>
                     </select>
                 </div>
 
                 <div class="space-y-1">
                     <label for="access_status"
-                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</label>
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ t('filter.status') }}</label>
                     <select name="access_status"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
-                        <option value="">All Statuses</option>
-                        <option value="Normal Car">Normal Car</option>
-                        <option value="Trust Car">Trust Car</option>
-                        <option value="Suspicious Car">Suspicious Car</option>
-                        <option value="Unknown">Unknown</option>
+                        <option value="">{{ t('filter.all_statuses') }}</option>
+                        <option value="Normal Car">{{ t('status.normal_car') }}</option>
+                        <option value="Trust Car">{{ t('status.trust_car') }}</option>
+                        <option value="Suspicious Car">{{ t('status.suspicious_car') }}</option>
+                        <option value="Unknown">{{ t('status.unknown') }}</option>
                     </select>
                 </div>
                 <div class="space-y-1">
                     <label for="driving_direction"
-                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Direction</label>
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ t('filter.direction') }}</label>
                     <select name="driving_direction"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
-                        <option value="">All Directions</option>
-                        <option value="Approach">Approach</option>
-                        <option value="Leave">Leave</option>
+                        <option value="">{{ t('filter.all_directions') }}</option>
+                        <option value="Approach">{{ t('direction.approach') }}</option>
+                        <option value="Leave">{{ t('direction.leave') }}</option>
                     </select>
                 </div>
                 <div class="space-y-1">
                     <label for="start_date"
-                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Start
-                        Date</label>
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ t('filter.start_date') }}</label>
                     <input type="date" name="start_date"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
                 </div>
                 <div class="space-y-1">
                     <label for="start_time"
-                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Start
-                        Time</label>
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ t('filter.start_time') }}</label>
                     <input type="time" name="start_time"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
                 </div>
                 <div class="space-y-1">
                     <label for="end_date"
-                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">End
-                        Date</label>
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ t('filter.end_date') }}</label>
                     <input type="date" name="end_date"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
                 </div>
                 <div class="space-y-1">
                     <label for="end_time"
-                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">End
-                        Time</label>
+                        class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ t('filter.end_time') }}</label>
                     <input type="time" name="end_time"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-colors">
                 </div>
                 <div class="col-span-full flex justify-end space-x-3 mt-2">
                     <button type="reset" id="resetButton"
                         class="px-5 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold rounded-lg transition-colors focus:ring-2 focus:ring-gray-400">
-                        Reset
+                        {{ t('filter.reset') }}
                     </button>
                     <button type="submit"
                         class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800">
-                        Search
+                        {{ t('filter.apply') }}
                     </button>
                 </div>
             </form>
@@ -219,7 +222,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            <span class="font-medium">New events available</span>
+            <span class="font-medium">{{ t('notification.new_events') }}</span>
         </div>
 
         <div
@@ -230,35 +233,34 @@
                         <tr>
                             <th scope="col"
                                 class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Image</th>
+                                {{ t('table.col.image') }}</th>
                             <th scope="col"
                                 class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Timestamp</th>
+                                {{ t('table.col.timestamp') }}</th>
                             <th scope="col"
                                 class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Plate</th>
+                                {{ t('table.col.plate') }}</th>
                             <th scope="col"
                                 class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Status</th>
+                                {{ t('table.col.status') }}</th>
                             <th scope="col"
                                 class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Type</th>
+                                {{ t('table.col.vehicle_type') }}</th>
                             <th scope="col"
                                 class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Color</th>
+                                {{ t('table.col.color') }}</th>
                             <th scope="col"
                                 class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Direction</th>
+                                {{ t('table.col.direction') }}</th>
                             <th scope="col"
                                 class="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Camera</th>
+                                {{ t('table.col.camera') }}</th>
                         </tr>
                     </thead>
                     <tbody id="eventsTableBody"
                         class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         <tr>
-                            <td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400">Loading
-                                events...
+                            <td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400">{{ t('table.loading') }}
                             </td>
                         </tr>
                     </tbody>
@@ -270,16 +272,18 @@
             class="mt-6 p-4 bg-white dark:bg-gray-800 rounded-xl shadow-md flex flex-col sm:flex-row justify-between items-center transition-colors duration-200 border border-gray-100 dark:border-gray-700">
             <button id="prevButton"
                 class="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold py-2 px-6 rounded-lg shadow-sm transition-colors mb-2 sm:mb-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled>Previous</button>
-            <div id="pageInfo" class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 sm:mb-0">Page 1 of 1
+                disabled>{{ t('pagination.previous') }}</button>
+            <div id="pageInfo" class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 sm:mb-0">{{ t('pagination.page_x_of_y').replace('{current}', '1').replace('{total}', '1') }}
             </div>
             <button id="nextButton"
                 class="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold py-2 px-6 rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled>Next</button>
+                disabled>{{ t('pagination.next') }}</button>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
     <script>
+        function t(key) { return (window.__i18n && window.__i18n[key]) ? window.__i18n[key] : key; }
+
         // --- Theme Toggle Logic ---
         const themeToggleBtn = document.getElementById('themeToggle');
 
@@ -317,11 +321,12 @@
             if (data && data.new_events_count > 0) {
                 const count = data.new_events_count;
                 // Update text but keep icon
+                const evtLabel = count > 1 ? t('notification.new_events_count') : t('notification.new_event');
                 newEventsNotification.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                    <span class="font-medium">${count} new event${count > 1 ? 's' : ''} available</span>
+                    <span class="font-medium">${count} ${evtLabel}</span>
                 `;
                 newEventsNotification.classList.remove('hidden');
             }
@@ -351,7 +356,7 @@
         }
 
         async function fetchEvents(page = 1, filters = new URLSearchParams()) {
-            eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>Loading events...</td></tr>';
+            eventsTableBody.innerHTML = `<tr><td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>${t('table.loading')}</td></tr>`;
 
             const params = new URLSearchParams(filters);
             params.set('page', page);
@@ -370,7 +375,7 @@
                 updateTable(data.events);
                 updatePaginationControls();
             } else {
-                eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-red-500 dark:text-red-400">Error loading events. Please try again later.</td></tr>';
+                eventsTableBody.innerHTML = `<tr><td colspan="8" class="text-center p-4 text-red-500 dark:text-red-400">${t('table.error')}</td></tr>`;
                 totalPages = 0; currentPage = 1;
                 updatePaginationControls();
             }
@@ -381,7 +386,7 @@
         function updateTable(events) {
             eventsTableBody.innerHTML = '';
             if (!events || events.length === 0) {
-                eventsTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400">No events found.</td></tr>';
+                eventsTableBody.innerHTML = `<tr><td colspan="8" class="text-center p-8 text-gray-500 dark:text-gray-400">${t('table.empty')}</td></tr>`;
                 return;
             }
             events.forEach((event, index) => {
@@ -395,10 +400,28 @@
                 const getStatusBadge = (status) => {
                     const s = status ? String(status) : 'Unknown';
                     let colorClass = 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
-                    if (s === 'Trust Car') colorClass = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-                    else if (s === 'Suspicious Car') colorClass = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-                    else if (s === 'Normal Car') colorClass = 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-                    return `<span class="px-2.5 py-0.5 inline-flex text-xs font-semibold rounded-full ${colorClass}">${sanitize(s)}</span>`;
+                    let label = t('status.unknown');
+                    if (s === 'Trust Car') { colorClass = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'; label = t('status.trust_car'); }
+                    else if (s === 'Suspicious Car') { colorClass = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'; label = t('status.suspicious_car'); }
+                    else if (s === 'Normal Car') { colorClass = 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'; label = t('status.normal_car'); }
+                    return `<span class="px-2.5 py-0.5 inline-flex text-xs font-semibold rounded-full ${colorClass}">${sanitize(label)}</span>`;
+                };
+
+                const getDirectionLabel = (direction) => {
+                    const d = direction ? String(direction) : '';
+                    if (d === 'Approach') return t('direction.approach');
+                    if (d === 'Leave') return t('direction.leave');
+                    if (d === 'Unknown') return t('direction.unknown');
+                    return sanitize(d) || 'N/A';
+                };
+
+                const getVehicleColorLabel = (color) => {
+                    if (!color) return 'N/A';
+                    const c = String(color);
+                    const key = 'color.' + c.toLowerCase();
+                    const translated = t(key);
+                    // If translation found (not just key echo), return it; otherwise fall back to raw value
+                    return translated !== key ? translated : sanitize(c);
                 };
 
                 const imageCell = event.image_filename ?
@@ -406,13 +429,13 @@
                         <a href="${imageUrl}" class="glightbox" data-gallery="gallery">
                             <img src="${imageUrl}" alt="Plate ${sanitize(event.plate_number)}" class="h-16 w-24 object-cover rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-gray-600">
                         </a>
-                        <a href="${imageUrl}" target="_blank" title="Open original in new tab" class="text-gray-400 hover:text-blue-500 transition-colors">
+                        <a href="${imageUrl}" target="_blank" title="${t('table.open_in_tab')}" class="text-gray-400 hover:text-blue-500 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
                         </a>
                      </div>`
-                    : '<span class="text-gray-400 italic">No Image</span>';
+                    : `<span class="text-gray-400 italic">${t('table.no_image')}</span>`;
 
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap">
@@ -422,8 +445,8 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white font-mono">${sanitize(event.plate_number)}</td>
                     <td class="px-6 py-4 whitespace-nowrap">${getStatusBadge(event.access_status)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.vehicle_type)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(processedData.VehicleColor)}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.driving_direction)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${getVehicleColorLabel(processedData.VehicleColor)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${getDirectionLabel(event.driving_direction)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">${sanitize(event.camera_friendly_name)}</td>
                 `;
                 eventsTableBody.appendChild(row);
@@ -452,7 +475,8 @@
         }
 
         function updatePaginationControls() {
-            pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+            const pageTpl = t('pagination.page_x_of_y');
+            pageInfo.textContent = pageTpl.replace('{current}', currentPage).replace('{total}', totalPages);
             prevButton.disabled = currentPage <= 1;
             nextButton.disabled = currentPage >= totalPages;
 

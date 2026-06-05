@@ -24,6 +24,7 @@ COPY app/anpr_web.py /app/app/
 COPY app/models.py /app/app/
 COPY app/templates/ /app/app/templates/
 COPY app/static/ /app/app/static/
+COPY app/translations/ /app/app/translations/
 
 # Create __init__.py to make app a package
 RUN touch /app/app/__init__.py

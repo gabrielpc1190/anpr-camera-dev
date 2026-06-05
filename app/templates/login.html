@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class="light">
+<html lang="{{ current_lang }}" class="light">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - ANPR System</title>
+    <title>{{ t('login.title') }} - {{ t('login.system_name') }}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <script src="{{ url_for('static', filename='tailwind.js') }}"></script>
     <script>
@@ -36,7 +36,7 @@
     <div class="absolute top-4 right-4">
         <button id="themeToggle"
             class="p-2 rounded-full bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 shadow-md hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-            aria-label="Toggle Dark Mode">
+            aria-label="{{ t('header.toggle_dark_mode') }}">
             <!-- Sun Icon -->
             <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 hidden dark:block" fill="none"
                 viewBox="0 0 24 24" stroke="currentColor">
@@ -55,8 +55,8 @@
     <div
         class="bg-white dark:bg-gray-800 p-8 sm:p-10 rounded-xl shadow-xl w-full max-w-md transition-colors duration-200 border border-gray-100 dark:border-gray-700">
         <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">ANPR System</h1>
-            <p class="text-gray-500 dark:text-gray-400 text-sm">Please sign in to continue</p>
+            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">{{ t('login.system_name') }}</h1>
+            <p class="text-gray-500 dark:text-gray-400 text-sm">{{ t('login.subtitle') }}</p>
         </div>
 
         {% with messages = get_flashed_messages() %}
@@ -70,22 +70,29 @@
         {% endif %}
         {% endwith %}
 
+        <div class="flex justify-end space-x-1 mb-4">
+            <a href="/set-lang/es?next={{ request.path }}"
+               class="px-2 py-1 text-xs rounded {% if current_lang == 'es' %}bg-blue-600 text-white font-semibold{% else %}text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700{% endif %}">ES</a>
+            <a href="/set-lang/en?next={{ request.path }}"
+               class="px-2 py-1 text-xs rounded {% if current_lang == 'en' %}bg-blue-600 text-white font-semibold{% else %}text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700{% endif %}">EN</a>
+        </div>
+
         <form method="POST" action="/login" class="space-y-6">
             <div>
                 <label for="username"
-                    class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
+                    class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('login.username') }}</label>
                 <input type="text" id="username" name="username" required autofocus autocomplete="username"
                     class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-white placeholder-gray-400 transition-colors">
             </div>
             <div>
                 <label for="password"
-                    class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                    class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('login.password') }}</label>
                 <input type="password" id="password" name="password" required autocomplete="current-password"
                     class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-white placeholder-gray-400 transition-colors">
             </div>
             <button type="submit"
                 class="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-all duration-200">
-                Sign In
+                {{ t('login.submit') }}
             </button>
         </form>
     </div>
