@@ -20,6 +20,13 @@
         }
     </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='inter.css') }}">
+    <style>
+        /* Costa Rica civil flag — colors preserved against Chromium "Force Dark Mode" (Brave). */
+        .cr-flag-svg {
+            forced-color-adjust: none;
+            color-scheme: only light;
+        }
+    </style>
     <script>
         if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
@@ -32,8 +39,22 @@
 </head>
 
 <body
-    class="bg-gray-100 dark:bg-gray-900 flex items-center justify-center h-screen transition-colors duration-200 font-sans">
-    <div class="absolute top-4 right-4">
+    class="bg-gray-100 dark:bg-gray-900 flex items-center justify-center min-h-screen px-4 py-24 sm:py-8 transition-colors duration-200 font-sans">
+    <img src="{{ url_for('static', filename='seguridad_comunitaria.png') }}"
+         alt="{{ t('login.logo_alt') }}"
+         class="absolute top-3 left-3 h-14 w-14 sm:top-4 sm:left-4 sm:h-20 sm:w-20 object-contain">
+    <div class="absolute top-3 right-3 w-16 h-10 sm:top-4 sm:right-4 sm:w-20 sm:h-12 border border-gray-300 dark:border-gray-600 shadow-md rounded-sm overflow-hidden"
+         title="{{ t('login.flag_alt') }}"
+         aria-label="{{ t('login.flag_alt') }}" role="img">
+        <svg viewBox="0 0 5 3" preserveAspectRatio="none" class="cr-flag-svg w-full h-full block">
+            <rect width="5" height="0.5" y="0"   fill="#002B7F"/>
+            <rect width="5" height="0.5" y="0.5" fill="#FFFFFF"/>
+            <rect width="5" height="1"   y="1"   fill="#CE1126"/>
+            <rect width="5" height="0.5" y="2"   fill="#FFFFFF"/>
+            <rect width="5" height="0.5" y="2.5" fill="#002B7F"/>
+        </svg>
+    </div>
+    <div class="absolute bottom-4 right-4">
         <button id="themeToggle"
             class="p-2 rounded-full bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 shadow-md hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             aria-label="{{ t('header.toggle_dark_mode') }}">
@@ -95,6 +116,14 @@
                 {{ t('login.submit') }}
             </button>
         </form>
+
+        <hr class="my-6 border-gray-200 dark:border-gray-700">
+        <div class="text-xs text-gray-600 dark:text-gray-400 leading-relaxed space-y-2">
+            <p class="font-semibold text-gray-700 dark:text-gray-300">{{ t('login.disclaimer_title') }}</p>
+            <p>{{ t('login.disclaimer_purpose') }}</p>
+            <p>{{ t('login.disclaimer_donations') }}</p>
+            <p>{{ t('login.disclaimer_no_benefit') }}</p>
+        </div>
     </div>
 
     <script>
