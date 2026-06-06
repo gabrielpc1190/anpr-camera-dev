@@ -52,25 +52,28 @@ Todos los servicios corren con `network_mode: host`, por eso usan `localhost` pa
 │   └── superpowers/
 │       ├── specs/              # Specs de features (camera_id, groups, i18n, image-retention)
 │       └── plans/              # Planes operacionales paso a paso por feature
+├── scripts/
+│   ├── transcode_jxl.py        # CLI lossless JPEG→JXL del corpus histórico (v2.7)
+│   └── transcode_jxl.cron.example  # Plantilla cron (NO instalada)
 └── app/
     ├── anpr_listener.py        # ~316 líneas — captura eventos Dahua
     ├── anpr_db_manager.py      # ~900 líneas — API Flask + DB (incluye CRUD de groups)
-    ├── anpr_web.py             # ~600 líneas — UI Flask + auth + proxy + i18n + admin groups
+    ├── anpr_web.py             # ~600 líneas — UI Flask + auth + proxy + i18n + admin groups + JXL serve fallback
     ├── models.py               # SQLAlchemy User model + bcrypt
     ├── config.ini              # Cámaras + logging (NO en git)
     ├── config.ini.example
     ├── NetSDK-*.whl            # SDK Dahua (descargado por setup.sh)
-    ├── anpr_images/            # JPGs persistidos por db-manager
+    ├── anpr_images/            # Mezcla de .jpg (recién ingestados) y .jxl (transcodeados, v2.7)
     ├── logs/                   # anpr_listener.log, anpr_db_manager.log
     ├── db/                     # Bind-mount de MariaDB (datafiles)
-    ├── static/                 # tailwind.js, inter.css, favicon
-    ├── translations/           # i18n — fuente de verdad: es.json + en.json (176 keys c/u)
+    ├── static/                 # tailwind.js, inter.css, favicon, seguridad_comunitaria.png (v2.8)
+    ├── translations/           # i18n — fuente de verdad: es.json + en.json (182 keys c/u)
     │   ├── es.json
     │   └── en.json
     └── templates/
         ├── index.html          # Dashboard (520 líneas, todas las strings vía t())
         ├── admin.html          # Panel admin (794+ líneas, 3 tabs incluyendo Grupos)
-        └── login.html          # Toggle ES/EN visible (sin sesión)
+        └── login.html          # Branding Ojochal de Osa + logo + bandera CR + disclaimer (v2.8)
 ```
 
 ## 4. Componentes principales — puntos de entrada
@@ -131,6 +134,12 @@ El cliente es anpr-web, que computa el filtro por viewer (ver 4.3). db-manager n
 - `get_allowed_camera_ids(user)` — devuelve `None` para admin (sin filtro), `list[int]` para viewer con grupos, `[]` para viewer sin grupos. Query: JOIN `camera_group_members` ↔ `user_camera_groups` por `user_id`.
 - `api_proxy()` (`/api/<path>`) — para viewer, inyecta `allowed_camera_ids=<csv>` en el query string al forwardear al db-manager. Para admin, pasa el request sin tocar.
 - `serve_image(filename)` — antes de servir el JPG, si el usuario es viewer hace lookup del `camera_id` del evento (por `image_filename`) y valida que está en `allowed_camera_ids`. Admin: bypass.
+
+**JXL fallback transparente (v2.7)**:
+- `_send_image_or_jxl_fallback(images_dir, filename)` — helper invocado por `serve_image()` en ambos paths (admin + viewer). Si el `.jpg` existe en disco lo sirve directo (status quo); si no, busca el sibling `.jxl` y lo decodifica on-the-fly con `subprocess.run(['djxl', jxl_path, tmp_path], timeout=5)` a un tempfile `.jpg`, lee los bytes y devuelve `Response(data, mimetype='image/jpeg')`. Cualquier fallo (djxl no-zero rc, timeout, sha mismatch) → 404 + log WARNING.
+- **Sanitización**: usa `werkzeug.utils.safe_join` ANTES de cualquier filesystem touch, para evitar path traversal en la rama del JXL (la rama del `.jpg` ya estaba protegida por `send_from_directory`).
+- `djxl` viene del paquete `libjxl-tools` instalado en `anpr_web.Dockerfile` (NO está en otras imágenes — solo anpr-web necesita decodificar).
+- Endpoint contract sin cambios: el frontend sigue pidiendo `/images/foo.jpg`. La DB sigue guardando `foo.jpg` en `image_filename` aunque en disco haya `foo.jxl`. **NO migrar la DB**.
 
 **Rutas vista**: `/login`, `/logout`, `/` (index), `/admin`, `/set-lang/<lang>`.
 
@@ -385,10 +394,16 @@ Los archivos `.py` y templates están **baked into la imagen Docker** en el mome
 - Botón "Grupos" en cada viewer también opera por la API admin.
 - Toggle ES/EN en el header igual que index.html.
 
-### `templates/login.html` — Login
+### `templates/login.html` — Login (v2.8 branding Ojochal de Osa)
 
+- Título: "Sistema ANPR - Ojochal de Osa" / "ANPR System - Ojochal de Osa" (key `login.system_name`).
+- Logo "Seguridad Comunitaria" (PNG 523×523 en `static/`) absolute top-left. Tamaño responsive: `h-14 w-14` en mobile, `h-20 w-20` en desktop.
+- Bandera de Costa Rica (SVG inline de 5 franjas 1:1:2:1:1 — variante civil sin escudo) absolute top-right. Clase `cr-flag-svg` con `forced-color-adjust: none` y `color-scheme: only light` para resistir el Force Dark Mode de Chromium (Brave en móvil invertía los colores del gradient CSS — el SVG con `fill="#002B7F"`/`#CE1126`/`#FFFFFF` no se invierte).
+- Disclaimer de uso institucional al final del card: título + 3 párrafos (propósito Fuerza Pública, donaciones, no-beneficio-económico). 6 keys nuevas bajo `login.disclaimer_*` y `login.logo_alt`/`login.flag_alt`, con paridad es/en.
+- Theme toggle (sol/luna) movido de top-right a **bottom-right** para liberar la esquina derecha para la bandera.
 - Toggle ES/EN visible antes del formulario (los clientes externos pueden elegir idioma sin sesión).
 - Mensaje flash de "credenciales inválidas" pasa por `t('login.invalid')`.
+- Body usa `px-4 py-24 sm:py-8` y elementos abs `top-3 sm:top-4` para que el card no solape con logo/bandera en viewports angostos.
 
 ### Patrón i18n del frontend
 
@@ -428,18 +443,27 @@ Los archivos `.py` y templates están **baked into la imagen Docker** en el mome
 - **IP de sesión** vive ahora en el dict de session (`session['ip_address']`), NO en `sessions.ip_address` (columna legacy preservada para retrocompat). El admin UI lee el payload decodificado primero, fallback a columna.
 - **Estructura de keys i18n**: plana, snake_case, prefijada por área (`header.*`, `filter.*`, `table.col.*`, `status.*`, `direction.*`, `color.*`, `admin.*`, `backend.*`). Mantener orden alfabético dentro del JSON para minimizar diffs.
 - **Paridad de keys**: `es.json` y `en.json` deben tener exactamente las mismas keys. Verificar con `diff <(jq -r 'keys[]' es.json | sort) <(jq -r 'keys[]' en.json | sort)` — debe estar vacío.
+- **JXL coexistence en `anpr_images/`**: tras v2.7, el directorio mezcla `.jpg` (recién ingestados o todavía pendientes de transcode) y `.jxl` (transcodeados lossless). El listener sigue escribiendo `.jpg`; el script `scripts/transcode_jxl.py --replace` reemplaza in-place. La DB siempre referencia el nombre `.jpg`; el backend resuelve transparente.
+- **`djxl` 0.7.0 NO soporta stdout** (`djxl in.jxl -` falla con "can't decode to the file extension ''"). El helper en anpr_web usa `tempfile.NamedTemporaryFile(suffix='.jpg')` como output, lee los bytes, borra el tempfile en `finally`.
+- **`libjxl-tools` solo en `anpr_web.Dockerfile`** — el listener y db-manager no necesitan `djxl` y por tanto no se les agregó la dependencia. Si en el futuro otro servicio sirve imágenes, recordar agregar el `apt-get install libjxl-tools` al Dockerfile correspondiente.
+- **`werkzeug.utils.safe_join`** obligatorio en cualquier handler que abra archivos por nombre cuando el path no se delega 100% a `send_from_directory`. Sin él, `<path:filename>` permite traversal (`../../etc/passwd`).
+- **JXL es lossless de JPEG**: `cjxl -d 0 -j 1` reorganiza coeficientes DCT — `djxl` reconstruye el JPEG byte-a-byte (sha256 idéntico). NO hay generación-loss, las imágenes son material legal/evidencia y se conservan exactas. NO cambiar a JXL lossy o a AVIF sin re-discutir con el usuario.
+- **Force Dark Mode (Chromium/Brave) invierte CSS gradients** — la bandera CR del login se hizo SVG inline con `forced-color-adjust: none` y `color-scheme: only light` para resistir esta transformación. Patrón replicable para cualquier branding visual donde los colores son significativos.
 
 ## 13. Versión actual (de ROADMAP.md)
 
-**v2.6 — i18n ES/EN**: soporte multilenguaje (español + inglés) en toda la UI vía cookie `lang`, 176 keys traducidas en `app/translations/{es,en}.json`, helpers `t()` unificados en Python/Jinja/JS, refactor de flash + jsonify en backend.
+**v2.8 — Login Ojochal de Osa**: branding institucional en el login con logo de Seguridad Comunitaria (top-left), bandera de Costa Rica (top-right, SVG inline anti-Force-Dark-Mode), título "Sistema ANPR - Ojochal de Osa" / "ANPR System - Ojochal de Osa", y disclaimer de uso institucional (Fuerza Pública + donaciones de cámaras/REYCOM ISP/desarrollo voluntario). 6 keys i18n nuevas, responsive sizing para no solapar elementos en mobile.
 
 Anteriores:
+- **v2.7 — JPEG XL lossless compression (Part 1)**: backend sirve `.jxl` de forma transparente via `djxl` fallback en `serve_image()`, `libjxl-tools` agregado a `anpr_web.Dockerfile`, script CLI `scripts/transcode_jxl.py --replace` ya ejecutado sobre el corpus histórico. Ahorro one-time ~20 GB. **Pendiente Part 2**: toggle UI + watcher inotify para auto-comprimir ingesta nueva (sin esto, los 20 GB se recuperan en ~27 días de ingesta).
+- **v2.6 — i18n ES/EN**: soporte multilenguaje (español + inglés) en toda la UI vía cookie `lang`, 182 keys traducidas en `app/translations/{es,en}.json`, helpers `t()` unificados en Python/Jinja/JS, refactor de flash + jsonify en backend.
 - **v2.5 — Camera Groups + access control**: grupos de cámaras (M:N con cámaras y usuarios), filtro `allowed_camera_ids` en endpoints de lectura, panel admin con tab "Grupos", viewer restringido a cámaras de sus grupos (sin grupos = ve nada).
 - **v2.4 — Camera Identity Refactor**: per-camera callback closures, tabla `cameras`, `camera_id` INT FK en `anpr_events`, soporte para múltiples cámaras detrás de IP NAT compartida.
 - **v2.3 — Session IP Tracking** (la captura tenía race; arreglada via `session['ip_address']` patch).
 - **v2.2 — Auth refinement**: bcrypt, roles admin/viewer, gestión de sesiones, política de password 10+ chars.
 
 Próximos hitos (Near Term en ROADMAP):
+- **⚠️ Phase 7 Part 2 — Auto-compression de ingesta nueva**: tabla `app_settings` + toggle UI admin + servicio Docker `anpr-jxl-watcher` con `inotify_simple` + pool de workers. Spec ya escrito (`docs/superpowers/specs/2026-06-05-jxl-compression-design.md` secciones B y C). Importante para sostener el ahorro de Part 1.
 - Plate watchlist con notificaciones por Telegram.
 - Dashboard WebSocket (reemplazar polling).
 - **Phase 6: Tiered image retention** con Backblaze B2 (mes 0-12 local, 13-24 archivado a B2, >24 borrado). Diseño aprobado, implementación pendiente.
@@ -449,7 +473,16 @@ Próximos hitos (Near Term en ROADMAP):
 
 Toda la documentación de diseño y operación vive en `docs/`:
 
-- [`docs/superpowers/specs/`](docs/superpowers/specs/) — diseños aprobados por feature.
-- [`docs/superpowers/plans/`](docs/superpowers/plans/) — planes operacionales paso a paso (los que ejecutan los subagentes).
-- [`docs/deployment/`](docs/deployment/) — runbooks para deploys con migración (ej. camera-groups-migration.md).
+- [`docs/superpowers/specs/`](docs/superpowers/specs/) — diseños aprobados por feature. Incluye:
+  - `2026-05-15-camera-id-refactor-design.md` (v2.4)
+  - `2026-05-17-camera-groups-and-access-design.md` (v2.5)
+  - `2026-06-05-i18n-design.md` (v2.6)
+  - `2026-06-05-jxl-compression-design.md` (v2.7 + Phase 2 pendiente)
+- [`docs/superpowers/plans/`](docs/superpowers/plans/) — planes operacionales paso a paso (los que ejecutan los subagentes). Incluye:
+  - `2026-05-17-camera-groups-implementation.md`
+  - `2026-06-05-i18n-implementation.md`
+  - `2026-06-05-jxl-compression-phase1.md`
+- [`docs/deployment/`](docs/deployment/) — runbooks para deploys con migración:
+  - `camera-groups-migration.md`
+  - `jxl-transcode-runbook.md` (v2.7 — cómo correr el sweep histórico y activar el cron cuando llegue Phase 2)
 - [`docs/field-investigations.md`](docs/field-investigations.md) — anomalías de hardware o configuración detectadas en sitio. Hoy tiene 2 abiertas: asimetría de detección CAM3 vs CAM4, y `confidence=0` en cámaras Fase 5.
