@@ -1,12 +1,15 @@
 import os
+import subprocess
+import tempfile
 from datetime import timedelta
 from functools import wraps
 import requests
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, abort, session, make_response
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, abort, session, make_response, Response, current_app
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_session import Session
 from app.models import db, User
 from urllib.parse import urlparse
+from werkzeug.utils import safe_join
 import json
 
 # --- i18n: load translations at startup (fail-fast if missing/malformed) ---
@@ -516,6 +519,50 @@ def api_proxy(path):
     except requests.exceptions.RequestException as e:
         return jsonify({"error": t('backend.error.db_connect').format(error=str(e))}), 503
 
+def _send_image_or_jxl_fallback(images_dir, filename):
+    """Serve filename from images_dir, decoding from sibling .jxl if the .jpg is absent.
+
+    Returns the Flask response, or aborts 404 if neither file is available, the
+    requested path escapes images_dir, or djxl fails.
+    """
+    jpg_path = safe_join(images_dir, filename)
+    if jpg_path is None:
+        abort(404)
+    if os.path.exists(jpg_path):
+        return send_from_directory(images_dir, filename)
+
+    if not filename.endswith('.jpg'):
+        abort(404)
+    jxl_path = jpg_path[:-4] + '.jxl'
+    if not os.path.exists(jxl_path):
+        abort(404)
+
+    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tf:
+        tmp_path = tf.name
+    try:
+        result = subprocess.run(
+            ['djxl', jxl_path, tmp_path],
+            capture_output=True, timeout=5, check=False,
+        )
+        if result.returncode != 0:
+            current_app.logger.warning(
+                "djxl rc=%d on %s: %s",
+                result.returncode, jxl_path, result.stderr[:200].decode('utf-8', errors='replace'),
+            )
+            abort(404)
+        with open(tmp_path, 'rb') as f:
+            data = f.read()
+        return Response(data, mimetype='image/jpeg')
+    except subprocess.TimeoutExpired:
+        current_app.logger.warning("djxl timeout on %s", jxl_path)
+        abort(404)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
 @app.route('/images/<path:filename>')
 @login_required
 def serve_image(filename):
@@ -524,7 +571,7 @@ def serve_image(filename):
 
     # Admin: serve unconditionally
     if current_user.is_admin:
-        return send_from_directory(images_dir, filename)
+        return _send_image_or_jxl_fallback(images_dir, filename)
 
     # Viewer: look up the event's camera_id and check it's in allowed list
     allowed = get_allowed_camera_ids(current_user)
@@ -541,7 +588,7 @@ def serve_image(filename):
     if camera_id is None or camera_id not in allowed:
         abort(403)
 
-    return send_from_directory(images_dir, filename)
+    return _send_image_or_jxl_fallback(images_dir, filename)
 
 # --- Database Initialization ---
 with app.app_context():
