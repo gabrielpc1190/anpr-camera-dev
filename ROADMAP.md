@@ -37,6 +37,13 @@
 - **`Id` field required** in `[Camera.X]` config sections; listener validates it as integer at startup and skips misconfigured cameras with a clear error log.
 - Resolves production bug: two Dahua cameras behind shared NAT IP (10.49.9.50, ports 1177/1277) were mis-attributed because the SDK does not reliably distinguish subscriptions by handle when cameras share an external IP.
 
+### Phase 7: JXL Lossless Image Compression — Part 1 (v2.7, 2026-06-06)
+- **Backend serves JXL transparently**: `serve_image()` in `anpr_web.py` falls back to a sibling `.jxl` (decoded on-the-fly via `djxl`) when the `.jpg` is missing on disk. Endpoint contract unchanged — clients still request `/images/<name>.jpg`. `werkzeug.utils.safe_join` guards against path traversal.
+- **`libjxl-tools` in `anpr_web.Dockerfile`**: ships `cjxl`/`djxl` into the container.
+- **Historical sweep**: `scripts/transcode_jxl.py --replace` (already in repo, fully tested) processes the corpus (~128 k JPEGs from cameras emitting Q=71). JPEG XL **lossless transcode** (`cjxl -d 0 -j 1`) reorganizes DCT coefficients into a denser container; `djxl` reconstructs the original JPEG byte-for-byte (SHA-256 verified). Empirical savings ~17 % on this corpus.
+- **Result**: one-time disk reclaim ~20 GB (corpus 119 GB → ~99 GB). Cameras still write `.jpg` directly — Part 2 below addresses ongoing ingestion.
+- See `docs/superpowers/specs/2026-06-05-jxl-compression-design.md`, `docs/superpowers/plans/2026-06-05-jxl-compression-phase1.md`, `docs/deployment/jxl-transcode-runbook.md`.
+
 ## 🔍 Open Field Investigations
 
 See [`docs/field-investigations.md`](docs/field-investigations.md) for active anomalies that need on-site or in-camera-UI verification (not code changes):
@@ -47,6 +54,13 @@ See [`docs/field-investigations.md`](docs/field-investigations.md) for active an
 ## 🔜 Future Vision
 
 ### Near Term
+- [ ] **⚠️ Phase 7 Part 2: Auto-compression of new ingestion (JXL watcher + admin toggle)** — **important pending**. Phase 7 Part 1 compressed the historical corpus one-time (~20 GB recovered) but cameras still write `.jpg` directly, so the disk fills again at ~745 MB/day. Without this part, the saved space is consumed in ~27 days. Spec already exists (`docs/superpowers/specs/2026-06-05-jxl-compression-design.md`, sections B and C). Pending:
+  - New table `app_settings` (idempotent `CREATE TABLE IF NOT EXISTS`) with `compress_new_images` boolean.
+  - `GET`/`PUT /api/admin/settings/<key>` endpoints (admin-only, mirrored from db-manager to anpr-web following the camera-groups pattern).
+  - New "Configuración" tab in admin panel with the toggle (i18n strings under `admin.settings.*`).
+  - Refactor: extract transcode logic from `scripts/transcode_jxl.py` into shared module `app/jxl_transcode.py`.
+  - New Docker service `anpr-jxl-watcher`: Python + `inotify_simple` + 4-worker thread pool, reads the toggle from DB (cached 30 s), processes new `.jpg` files via `IN_CLOSE_WRITE`. Healthcheck via touch-file. Initial sweep on startup catches missed files.
+  - Expected steady-state result: growth drops from ~745 to ~620 MB/day (-17 %), making local storage sustainable until Phase 6 (Backblaze tiered) is ready.
 - [ ] **Plate watchlist with Telegram notifications**: maintain a list of "plates of interest" (managed via admin UI or DB). When the listener detects a plate that matches an entry in the list, send a Telegram message in real time with the plate, camera, timestamp, and image. Includes deduplication (same plate in same camera within N seconds is one notification), admin management of the list, and an audit log of notifications sent.
 - [ ] Real-time Dashboard updates via WebSockets.
 - [ ] **Phase 6: Tiered image retention with Backblaze B2 archival**.
