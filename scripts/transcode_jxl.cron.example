@@ -1,0 +1,18 @@
+# ANPR JPEG XL transcode cron — NOT installed by default.
+#
+# To activate (read docs/deployment/jxl-transcode-runbook.md first):
+#   sudo cp scripts/transcode_jxl.cron.example /etc/cron.d/anpr-jxl-transcode
+#   sudo chown root:root /etc/cron.d/anpr-jxl-transcode
+#   sudo chmod 644 /etc/cron.d/anpr-jxl-transcode
+#
+# Default schedule: 03:15 daily. Adjust hour if needed.
+# Default mode: PRESERVE (writes .jxl alongside .jpg, does NOT delete .jpg).
+# Switch to --replace ONLY after backend supports serving .jxl
+# (see runbook).
+#
+# Variables required for cron environment:
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+SHELL=/bin/bash
+
+# m h dom mon dow user command
+15 3 * * * root /usr/bin/python3 /root/anpr-camera-dev/scripts/transcode_jxl.py --age-min-hours 24 --throttle-ms 50 >> /var/log/anpr/jxl-transcode.cron.log 2>&1
